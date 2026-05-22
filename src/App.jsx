@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import api from "./api";
 
 // =============================================================================
 // KAIROS — v1 SELF-SERVE PRODUCT (single-file React app)
@@ -248,29 +247,11 @@ export default function App() {
   const [results, setResults] = useState([]);
   const [account, setAccount] = useState(null); // {email, plan, status, property, since, digests:[]}
   const [showValues, setShowValues] = useState(false);
-  const [scanId, setScanId] = useState(null);     // real id from backend (persisted in Supabase)
-  const [apiError, setApiError] = useState(null);
   const reco = useMemo(() => (results.length ? recommend(results) : null), [results]);
 
-  // Wire the scan through the REAL backend. Sends the verified values to
-  // /scan/from-values (which writes to Supabase and returns a scan_id), then
-  // renders the backend's disciplined results. Local evaluate() is kept only as
-  // an offline fallback if the network is unreachable.
-  const runPipeline = async (input) => {
-    setAttrs(input);
-    setApiError(null);
-    setRoute("loading");
-    const res = await api.scanFromValues(input);
-    if (res.ok && res.data && Array.isArray(res.data.results)) {
-      setResults(res.data.results);
-      setScanId(res.data.scan_id || null);
-      setRoute("scan");
-    } else if (res.data && res.data.mode === "manual_needed") {
-      setRoute("manual");
-    } else {
-      setApiError(res.error || "We couldn't complete the scan. Please try again.");
-      setRoute("error");
-    }
+  const runPipeline = (input) => {
+    setAttrs(input); setRoute("loading");
+    setTimeout(() => { setResults(evaluate(input)); setRoute("scan"); }, 2100);
   };
 
   return (
@@ -292,8 +273,6 @@ export default function App() {
         {route === "privacy" && <AddressEntry onRun={runPipeline} showValues={showValues} setShowValues={setShowValues}
           onLowFit={() => runPipeline(LOW_FIT)} />}
         {route === "loading" && <Loading />}
-        {route === "manual" && <ManualNeeded onBack={() => setRoute("privacy")} />}
-        {route === "error" && <ErrorScreen message={apiError} onRetry={() => (attrs ? runPipeline(attrs) : setRoute("privacy"))} onBack={() => setRoute("privacy")} />}
         {route === "scan" && attrs && <Scan attrs={attrs} results={results} reco={reco}
           onSubscribe={() => setRoute("subscribe")} onBack={() => setRoute("landing")} />}
         {route === "subscribe" && <Subscribe reco={reco} onChoose={(plan) => { setAccount((a) => ({ ...(a || {}), pendingPlan: plan })); setRoute("pay"); }}
@@ -526,38 +505,6 @@ function Loading() {
       ))}
       <div style={{ marginTop: 30, color: C.fog, fontSize: 12.5, fontFamily: FONT_MONO }}>
         A careful watch takes a moment. That's the point.
-      </div>
-    </div>
-  );
-}
-
-// ----------------------------- manual-needed + error states ----------------
-function ManualNeeded({ onBack }) {
-  return (
-    <div style={{ paddingTop: 90, maxWidth: 560 }}>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.prov, letterSpacing: ".14em" }}>MANUAL VERIFICATION NEEDED</div>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: "8px 0 12px" }}>This one needs a hand-checked scan</h2>
-      <p style={{ color: C.mist, fontSize: 15, lineHeight: 1.65 }}>
-        Automated lookup couldn't reach this property's public records right now. KAIROS will not fabricate values —
-        a person verifies the missing facts before your scan is completed. During our private alpha, scans like this
-        are completed manually rather than instantly.
-      </p>
-      <p style={{ color: C.fog, fontSize: 13.5, lineHeight: 1.6, marginTop: 10 }}>
-        Reach us at support@kairos.example to have yours run.
-      </p>
-      <div style={{ marginTop: 22 }}><Btn kind="ghost" onClick={onBack}>← Try another property</Btn></div>
-    </div>
-  );
-}
-function ErrorScreen({ message, onRetry, onBack }) {
-  return (
-    <div style={{ paddingTop: 90, maxWidth: 540 }}>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.alert, letterSpacing: ".14em" }}>COULDN'T COMPLETE THE SCAN</div>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: "8px 0 12px" }}>Let's try that again</h2>
-      <p style={{ color: C.mist, fontSize: 15, lineHeight: 1.65 }}>{message || "Something interrupted the scan."}</p>
-      <div style={{ display: "flex", gap: 12, marginTop: 22, flexWrap: "wrap" }}>
-        <Btn onClick={onRetry}>Retry scan</Btn>
-        <Btn kind="ghost" onClick={onBack}>← Back</Btn>
       </div>
     </div>
   );
