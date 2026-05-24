@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import api from "./api";
 
 // =============================================================================
 // KAIROS — v1 SELF-SERVE PRODUCT (single-file React app)
@@ -196,7 +195,7 @@ const UNIT_1001 = {
   has_building_record_fact: null, has_building_record_prov: PROV.NEEDED,
 };
 const LOW_FIT = {
-  nickname: "Suburban single-family (low-fit example)",
+  nickname: "Suburban single-family (low-fit demo)",
   property_type: "single_family", property_type_prov: PROV.VERIFIED,
   coastal: false, near_water: false, hurricane_region: false,
   flood_zone: "X", flood_zone_prov: PROV.VERIFIED,
@@ -248,99 +247,11 @@ export default function App() {
   const [results, setResults] = useState([]);
   const [account, setAccount] = useState(null); // {email, plan, status, property, since, digests:[]}
   const [showValues, setShowValues] = useState(false);
-  const [scanId, setScanId] = useState(null);     // real id from backend (persisted in Supabase)
-  const [apiError, setApiError] = useState(null);
   const reco = useMemo(() => (results.length ? recommend(results) : null), [results]);
 
-  // On load: (1) if returning from Stripe Checkout, confirm the real payment and
-  // activate; (2) otherwise restore an existing session from real backend digests.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get("session_id");
-    if (sessionId) {
-      let pending = null;
-      try { pending = JSON.parse(localStorage.getItem("kairos_pending") || "null"); } catch { pending = null; }
-      if (pending && pending.scan_id && pending.plan) {
-        api.confirmBilling({ session_id: sessionId, user_email: pending.email,
-          scan_id: pending.scan_id, plan: pending.plan.id }).then((res) => {
-          if (res.ok && res.data) {
-            const acc = {
-              email: pending.email, plan: pending.plan, status: "active",
-              property: pending.property, since: today(),
-              subscriptionId: res.data.subscription_id,
-              digests: res.data.first_digest ? [res.data.first_digest] : [],
-            };
-            try {
-              localStorage.setItem("kairos_session", JSON.stringify({
-                subscriptionId: acc.subscriptionId, email: acc.email,
-                property: acc.property, plan: acc.plan, since: acc.since }));
-              localStorage.removeItem("kairos_pending");
-            } catch { /* ignore */ }
-            setAccount(acc); setRoute("account");
-          } else {
-            setApiError(res.error || "We couldn't confirm your payment. If you were charged, contact support.");
-            setRoute("error");
-          }
-          window.history.replaceState({}, "", "/");
-        });
-        return;
-      }
-      window.history.replaceState({}, "", "/");
-    }
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem("kairos_session") || "null"); } catch { saved = null; }
-    if (saved && saved.subscriptionId) {
-      api.getDigests(saved.subscriptionId).then((res) => {
-        const digests = res.ok && res.data && Array.isArray(res.data.digests) ? res.data.digests : [];
-        setAccount({
-          email: saved.email, plan: saved.plan, status: "active",
-          property: saved.property, since: saved.since || today(),
-          subscriptionId: saved.subscriptionId, digests,
-        });
-        setRoute("account");
-      });
-    }
-  }, []);
-
-  // Wire the scan through the REAL backend. Sends the verified values to
-  // /scan/from-values (which writes to Supabase and returns a scan_id), then
-  // renders the backend's disciplined results. Local evaluate() is kept only as
-  // an offline fallback if the network is unreachable.
-  const runPipeline = async (input) => {
-    setAttrs(input);
-    setApiError(null);
-    setRoute("loading");
-    const res = await api.scanFromValues(input);
-    if (res.ok && res.data && Array.isArray(res.data.results)) {
-      setResults(res.data.results);
-      setScanId(res.data.scan_id || null);
-      setRoute("scan");
-    } else if (res.data && res.data.mode === "manual_needed") {
-      setRoute("manual");
-    } else {
-      setApiError(res.error || "We couldn't complete the scan. Please try again.");
-      setRoute("error");
-    }
-  };
-
-  // Honest typed-address path: really attempt a live county pull. If the source
-  // can't be reached, the backend returns manual_needed (no fabrication) and we
-  // show the manual screen — we never silently substitute the example property.
-  const runLive = async (address) => {
-    setApiError(null);
-    setRoute("loading");
-    const res = await api.scanLive({ address });
-    if (res.ok && res.data && res.data.mode === "manual_needed") {
-      setRoute("manual");
-    } else if (res.ok && res.data && Array.isArray(res.data.results)) {
-      setAttrs(res.data.attributes || null);
-      setResults(res.data.results);
-      setScanId(res.data.scan_id || null);
-      setRoute("scan");
-    } else {
-      setApiError(res.error || "We couldn't reach this property's records. Please try again.");
-      setRoute("error");
-    }
+  const runPipeline = (input) => {
+    setAttrs(input); setRoute("loading");
+    setTimeout(() => { setResults(evaluate(input)); setRoute("scan"); }, 2100);
   };
 
   return (
@@ -359,29 +270,20 @@ export default function App() {
 
       <div style={{ maxWidth: 920, margin: "0 auto", padding: "0 24px 120px" }}>
         {route === "landing" && <Landing onStart={() => setRoute("privacy")} onSample={() => runPipeline(UNIT_1001)} />}
-        {route === "privacy" && <AddressEntry onRun={runPipeline} onRunLive={runLive} showValues={showValues} setShowValues={setShowValues}
+        {route === "privacy" && <AddressEntry onRun={runPipeline} showValues={showValues} setShowValues={setShowValues}
           onLowFit={() => runPipeline(LOW_FIT)} />}
         {route === "loading" && <Loading />}
-        {route === "manual" && <ManualNeeded onBack={() => setRoute("privacy")} />}
-        {route === "error" && <ErrorScreen message={apiError} onRetry={() => (attrs ? runPipeline(attrs) : setRoute("privacy"))} onBack={() => setRoute("privacy")} />}
         {route === "scan" && attrs && <Scan attrs={attrs} results={results} reco={reco}
           onSubscribe={() => setRoute("subscribe")} onBack={() => setRoute("landing")} />}
         {route === "subscribe" && <Subscribe reco={reco} onChoose={(plan) => { setAccount((a) => ({ ...(a || {}), pendingPlan: plan })); setRoute("pay"); }}
           onSkip={() => setRoute("scan")} />}
-        {route === "pay" && <Pay
-          plan={account?.pendingPlan}
-          scanId={scanId}
-          propertyName={attrs?.nickname}
-          onActivated={(acc) => {
-            try {
-              localStorage.setItem("kairos_session", JSON.stringify({
-                subscriptionId: acc.subscriptionId, email: acc.email,
-                property: acc.property, plan: acc.plan, since: acc.since,
-              }));
-            } catch { /* ignore storage errors */ }
+        {route === "pay" && <Pay account={account}
+          onPaid={(email) => {
+            const plan = account.pendingPlan;
+            const acc = { email, plan, status: "active", property: attrs.nickname, since: today(),
+              digests: [buildDigest(attrs, results, 1)] };
             setAccount(acc); setRoute("onboard");
-          }}
-          onBack={() => setRoute("subscribe")} />}
+          }} onBack={() => setRoute("subscribe")} />}
         {route === "onboard" && account && <Onboard account={account} onGo={() => setRoute("account")} />}
         {route === "account" && account && <Account account={account} setAccount={setAccount} attrs={attrs} results={results} />}
       </div>
@@ -470,7 +372,7 @@ function Landing({ onStart, onSample }) {
 }
 
 // ----------------------------- address entry / from-values ------------------
-function AddressEntry({ onRun, onRunLive, showValues, setShowValues, onLowFit }) {
+function AddressEntry({ onRun, showValues, setShowValues, onLowFit }) {
   const [addr, setAddr] = useState("");
   return (
     <div style={{ paddingTop: 80, maxWidth: 620 }}>
@@ -493,12 +395,12 @@ function AddressEntry({ onRun, onRunLive, showValues, setShowValues, onLowFit })
             borderRadius: 8, padding: "15px 16px", fontSize: 15, fontFamily: FONT_BODY, outline: "none" }}
           onFocus={(e) => (e.target.style.borderColor = C.active)} onBlur={(e) => (e.target.style.borderColor = C.line)} />
         <div style={{ display: "flex", gap: 12, marginTop: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <Btn onClick={() => onRunLive(addr)} disabled={addr.trim().length < 6}>Run my scan</Btn>
-          <Btn kind="ghost" onClick={() => onRun(UNIT_1001)}>See a verified example (5445 Collins Ave)</Btn>
+          <Btn onClick={() => onRun(UNIT_1001)} disabled={addr.trim().length < 6}>Run my scan</Btn>
+          <Btn kind="ghost" onClick={() => onRun(UNIT_1001)}>Use the verified Unit 1001 demo</Btn>
         </div>
         <div style={{ marginTop: 12, color: C.fog, fontSize: 12.5, lineHeight: 1.6 }}>
-          Live county lookups run server-side. When automation can't reach a source, KAIROS shows a
-          manual-verification path rather than guessing — and never fabricates a value.
+          Note: in this v1 demo, live county lookups run server-side. When automation can't reach a
+          source, KAIROS shows a manual-verification sheet rather than guessing — and never fabricates a value.
         </div>
       </div>
 
@@ -603,38 +505,6 @@ function Loading() {
       ))}
       <div style={{ marginTop: 30, color: C.fog, fontSize: 12.5, fontFamily: FONT_MONO }}>
         A careful watch takes a moment. That's the point.
-      </div>
-    </div>
-  );
-}
-
-// ----------------------------- manual-needed + error states ----------------
-function ManualNeeded({ onBack }) {
-  return (
-    <div style={{ paddingTop: 90, maxWidth: 560 }}>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.prov, letterSpacing: ".14em" }}>MANUAL VERIFICATION NEEDED</div>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: "8px 0 12px" }}>This one needs a hand-checked scan</h2>
-      <p style={{ color: C.mist, fontSize: 15, lineHeight: 1.65 }}>
-        Automated lookup couldn't reach this property's public records right now. KAIROS will not fabricate values —
-        a person verifies the missing facts before your scan is completed. During our private alpha, scans like this
-        are completed manually rather than instantly.
-      </p>
-      <p style={{ color: C.fog, fontSize: 13.5, lineHeight: 1.6, marginTop: 10 }}>
-        Reach us at support@kairos.example to have yours run.
-      </p>
-      <div style={{ marginTop: 22 }}><Btn kind="ghost" onClick={onBack}>← Try another property</Btn></div>
-    </div>
-  );
-}
-function ErrorScreen({ message, onRetry, onBack }) {
-  return (
-    <div style={{ paddingTop: 90, maxWidth: 540 }}>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.alert, letterSpacing: ".14em" }}>COULDN'T COMPLETE THE SCAN</div>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: "8px 0 12px" }}>Let's try that again</h2>
-      <p style={{ color: C.mist, fontSize: 15, lineHeight: 1.65 }}>{message || "Something interrupted the scan."}</p>
-      <div style={{ display: "flex", gap: 12, marginTop: 22, flexWrap: "wrap" }}>
-        <Btn onClick={onRetry}>Retry scan</Btn>
-        <Btn kind="ghost" onClick={onBack}>← Back</Btn>
       </div>
     </div>
   );
@@ -773,48 +643,25 @@ function Subscribe({ reco, onChoose, onSkip }) {
   );
 }
 
-// ----------------------------- activation (real backend) -------------------
-function Pay({ plan, scanId, propertyName, onActivated, onBack }) {
+// ----------------------------- payment (simulated) --------------------------
+function Pay({ account, onPaid, onBack }) {
   const [email, setEmail] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState(null);
-  const ok = email.includes("@") && email.length > 4 && !!scanId && !!plan;
-
-  const activate = async () => {
-    setErr(null); setBusy(true);
-    const sub = await api.createSubscription({ email, scan_id: scanId, plan: plan.id });
-    if (!sub.ok) { setBusy(false); setErr(sub.error || "Could not start your subscription."); return; }
-    const checkout = sub.data && sub.data.checkout;
-    // Real Stripe Checkout: persist context across the redirect, then go to the
-    // hosted payment page. On return, the app confirms the payment (see App load).
-    if (checkout && checkout.mock === false && checkout.url) {
-      try {
-        localStorage.setItem("kairos_pending", JSON.stringify({
-          scan_id: scanId, email, plan, property: propertyName }));
-      } catch { /* ignore */ }
-      window.location.href = checkout.url;
-      return;
-    }
-    // No real Stripe session means the backend is in mock mode (Stripe keys not
-    // loaded). We do NOT silently activate — surface it honestly.
-    setBusy(false);
-    setErr("Live billing isn't enabled yet. Please try again shortly, or contact support@kairos.example.");
-  };
-
+  const [card, setCard] = useState("");
+  const plan = account?.pendingPlan;
+  const ok = email.includes("@") && card.replace(/\s/g, "").length >= 12;
   return (
     <div style={{ paddingTop: 80, maxWidth: 460 }}>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: 0 }}>Start your watch</h2>
-      <div style={{ color: C.mist, fontSize: 14, marginTop: 6 }}>
-        {plan?.name} · {plan?.price ? `$${plan.price}/mo` : "custom"} · cancel anytime
-      </div>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: 0 }}>Confirm your watch</h2>
+      <div style={{ color: C.mist, fontSize: 14, marginTop: 6 }}>{plan?.name} · ${plan?.price}/mo · cancel anytime</div>
       <div style={{ marginTop: 22, display: "grid", gap: 12 }}>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email for your account + monthly digest"
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email for your account + digest"
           style={inpStyle} onFocus={(e) => (e.target.style.borderColor = C.active)} onBlur={(e) => (e.target.style.borderColor = C.line)} />
-        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.fog, lineHeight: 1.6 }}>
-          You'll continue to secure checkout (Stripe) to start your subscription. Cancel anytime.
+        <input value={card} onChange={(e) => setCard(e.target.value)} placeholder="card number (Stripe — simulated here)"
+          style={inpStyle} onFocus={(e) => (e.target.style.borderColor = C.active)} onBlur={(e) => (e.target.style.borderColor = C.line)} />
+        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.fog }}>
+          v1 wires Stripe Checkout + email magic-link auth. Simulated in this demo; no real charge.
         </div>
-        {err && <div style={{ color: C.alert, fontSize: 13, lineHeight: 1.5 }}>{err}</div>}
-        <Btn onClick={activate} disabled={!ok || busy}>{busy ? "Activating…" : "Activate monitoring"}</Btn>
+        <Btn onClick={() => onPaid(email)} disabled={!ok}>Start monitoring</Btn>
         <Btn kind="quiet" onClick={onBack}>← back</Btn>
       </div>
     </div>
@@ -842,6 +689,10 @@ function Onboard({ account, onGo }) {
 // ----------------------------- account shell + digest -----------------------
 function Account({ account, setAccount, attrs, results }) {
   const [tab, setTab] = useState("digest");
+  const addMonth = () => {
+    const n = account.digests.length + 1;
+    setAccount({ ...account, digests: [buildDigest(attrs, results, n), ...account.digests] });
+  };
   return (
     <div style={{ paddingTop: 60 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -850,7 +701,7 @@ function Account({ account, setAccount, attrs, results }) {
           <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: "4px 0 0" }}>{account.property}</h2>
           <div style={{ color: C.fog, fontSize: 13, marginTop: 4 }}>{account.plan?.name} · active since {account.since}</div>
         </div>
-        <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: C.fog, letterSpacing: ".04em" }}>Next digest · monthly</div>
+        <Btn kind="ghost" onClick={addMonth}>Simulate next month →</Btn>
       </div>
 
       <div style={{ display: "flex", gap: 18, margin: "26px 0 18px", borderBottom: `1px solid ${C.line}` }}>
@@ -879,7 +730,7 @@ function Account({ account, setAccount, attrs, results }) {
               <span style={{ color: C.fog, fontSize: 13 }}>{k}</span><span style={{ color: C.bone, fontSize: 13.5 }}>{v}</span>
             </div>
           ))}
-          <div style={{ marginTop: 16 }}><Btn kind="ghost" onClick={() => { try { localStorage.removeItem("kairos_session"); } catch { /* ignore */ } setAccount({ ...account, status: "cancelled" }); }}>Cancel anytime</Btn></div>
+          <div style={{ marginTop: 16 }}><Btn kind="ghost" onClick={() => setAccount({ ...account, status: "cancelled" })}>Cancel anytime</Btn></div>
         </div>
       )}
     </div>
@@ -887,7 +738,7 @@ function Account({ account, setAccount, attrs, results }) {
 }
 
 // Build a digest from the live results. Month 1 restates baseline; later months
-// model an honest "mostly stable" cadence with one optional change/escalation.
+// simulate an honest "mostly stable" cadence with one optional change/escalation.
 function buildDigest(attrs, results, n) {
   const active = results.filter((r) => r.strength === STR.ACTIVE || r.strength === STR.PROVISIONAL);
   const monthDate = new Date(); monthDate.setMonth(monthDate.getMonth() + (n - 1));
