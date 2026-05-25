@@ -1,16 +1,33 @@
-# React + Vite
+# KAIROS — frontend (React + Vite)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The self-serve product UI for KAIROS. Drives the full loop — landing → address /
+from-values → scan → categories → subscription → payment → onboarding → monthly
+digest → account — against the FastAPI backend (`kairos-backend`). The activation
+logic shown in the UI mirrors the backend engine, but the **backend is the source of
+truth** (all scans/subscriptions/digests are persisted server-side).
 
-Currently, two official plugins are available:
+## Run locally
+```bash
+npm install
+npm run dev        # Vite dev server (HMR)
+npm run build      # production build -> dist/
+npm run preview    # serve the production build
+npm run lint       # eslint
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Environment variables
+Set these in `.env.local` for local dev, and in the hosting provider (e.g. Vercel) for
+production. None contain secrets.
 
-## React Compiler
+| Var | Purpose | Default |
+|---|---|---|
+| `VITE_API_BASE` | Base URL of the FastAPI backend | falls back to the live Render backend URL |
+| `VITE_SUPPORT_EMAIL` | Support contact shown in the UI | falls back to a placeholder (`support@kairos.example`) — **set the real address for production** |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+`.env*` files are gitignored — never commit real values.
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Backend contract
+`src/api.js` is the single place that talks to the backend: env-driven base URL, a
+fetch wrapper with a generous timeout (absorbs Render cold starts), and normalized
+`{ok, data, error, status}` returns. Owner-scoped calls (cancel, digests) present the
+capability token issued at subscription create/confirm as a `Bearer` header.

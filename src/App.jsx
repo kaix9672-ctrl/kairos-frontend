@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import api from "./api";
 
+// Support contact — env-driven so production sets the real address (VITE_SUPPORT_EMAIL,
+// e.g. in Vercel) without a code change. Falls back to the placeholder for local/dev only.
+const SUPPORT_EMAIL = (import.meta.env && import.meta.env.VITE_SUPPORT_EMAIL) || "support@kairos.example";
+
 // =============================================================================
 // KAIROS — v1 SELF-SERVE PRODUCT (single-file React app)
 // -----------------------------------------------------------------------------
@@ -421,7 +425,7 @@ function Footer() {
     <div style={{ borderTop: `1px solid ${C.line}`, padding: "28px 24px", textAlign: "center" }}>
       <div style={{ maxWidth: 920, margin: "0 auto", color: C.fog, fontSize: 12, lineHeight: 1.7 }}>
         We do not predict the future. We do not place insurance. We do not sell your data. We do not guarantee savings.<br />
-        <span style={{ fontFamily: FONT_MONO, fontSize: 11 }}>support@kairos.example · founder-led · estimates are labeled, uncertainty stays visible</span>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 11 }}>{SUPPORT_EMAIL} · founder-led · estimates are labeled, uncertainty stays visible</span>
       </div>
     </div>
   );
@@ -625,7 +629,7 @@ function ManualNeeded({ onBack }) {
         are completed manually rather than instantly.
       </p>
       <p style={{ color: C.fog, fontSize: 13.5, lineHeight: 1.6, marginTop: 10 }}>
-        Reach us at support@kairos.example to have yours run.
+        Reach us at {SUPPORT_EMAIL} to have yours run.
       </p>
       <div style={{ marginTop: 22 }}><Btn kind="ghost" onClick={onBack}>← Try another property</Btn></div>
     </div>
@@ -803,7 +807,7 @@ function Pay({ plan, scanId, propertyName, onActivated, onBack }) {
     // No real Stripe session means the backend is in mock mode (Stripe keys not
     // loaded). We do NOT silently activate — surface it honestly.
     setBusy(false);
-    setErr("Live billing isn't enabled yet. Please try again shortly, or contact support@kairos.example.");
+    setErr(`Live billing isn't enabled yet. Please try again shortly, or contact ${SUPPORT_EMAIL}.`);
   };
 
   return (
