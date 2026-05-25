@@ -87,8 +87,18 @@ export const api = {
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
     }),
 
-  getDigests: (subId) => call(`/digests/${subId}`),
-  nextDigest: (subId) => call(`/digests/${subId}/next`, { method: "POST" }),
+  // Owner-scoped reads/writes. Send the capability token (issued at create/confirm) as a
+  // Bearer header; the backend enforces it only when KAIROS_AUTH_SECRET is set, so passing a
+  // null token stays a safe no-op pre-activation.
+  getDigests: (subId, accessToken) =>
+    call(`/digests/${subId}`, {
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    }),
+  nextDigest: (subId, accessToken) =>
+    call(`/digests/${subId}/next`, {
+      method: "POST",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    }),
 };
 
 export default api;
