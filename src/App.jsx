@@ -292,7 +292,7 @@ export default function App() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem("kairos_session") || "null"); } catch { saved = null; }
     if (saved && saved.subscriptionId) {
-      api.getDigests(saved.subscriptionId).then((res) => {
+      api.getDigests(saved.subscriptionId, saved.accessToken).then((res) => {
         // Deterministic restore: ONLY land on the account if the backend confirms
         // a real subscription that has at least one digest. A stale, cancelled, or
         // corrupt session must never hijack the flow — clear it and stay on landing.
