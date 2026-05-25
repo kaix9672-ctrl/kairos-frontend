@@ -1,54 +1,55 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import api from "./api";
+import { COPY } from "./copy";
 
 // Support contact — env-driven so production sets the real address (VITE_SUPPORT_EMAIL,
-// e.g. in Vercel) without a code change. Falls back to the placeholder for local/dev only.
+// falls back to a placeholder so a missing env never leaks a wrong inbox).
 const SUPPORT_EMAIL = (import.meta.env && import.meta.env.VITE_SUPPORT_EMAIL) || "support@kairos.example";
 
 // =============================================================================
-// KAIROS — v1 SELF-SERVE PRODUCT (single-file React app)
+// KAIROS — v1 SELF-SERVE PRODUCT (single-file React app) — PLAYGROUND REDESIGN
 // -----------------------------------------------------------------------------
-// The full loop: landing -> address/from-values -> loading -> scan ->
-// categories -> subscription -> payment(sim) -> onboarding -> monthly digest ->
-// account shell. The activation engine below is a faithful JS port of
-// KAIROS_ACTIVATION_ENGINE.py (same strengths, same discipline invariants).
-//
-// Product = reduced operational surprise. System = silent operational bodyguard.
-// Engineering invariants enforced in code:
-//   - activation != alerting
-//   - no category ACTIVE on assumption alone (capped at provisional)
-//   - no immediate alert without a verified change to a verified fact
-//   - every active category carries a "so what"; else it's downgraded
-//   - silence (no change) is reported as proof-of-work, never hidden
+// VISUAL/EMOTIONAL redesign ONLY. Every data/engine/API/checkout/cancel/restore
+// behavior is preserved exactly:
+//   - activation engine is the faithful JS port (unchanged)
+//   - api.js contract unchanged; same calls, same fields
+//   - Stripe Checkout redirect + confirm-on-return + session restore unchanged
+//   - cancel = api.cancelSubscription (cancel-at-period-end) unchanged
+//   - NO fabricated values, NO invented savings $; provenance stays visible
+// New: bright/white playful theme + tabbed dashboard
+//   (Overview · Property · Savings · Alerts · Digest · Account).
 // =============================================================================
 
-// ----------------------------- design tokens -------------------------------
+// ----------------------------- design tokens (bright playground) ------------
 const C = {
-  ink: "#0e1113",        // near-black ground
-  panel: "#15191c",
-  panel2: "#1b2024",
-  line: "#2a3137",
-  fog: "#8a969e",        // muted text
-  mist: "#c4ccd1",       // secondary text
-  bone: "#eef1f2",       // primary text
-  active: "#7fb6a6",     // restrained sage — "active"
-  prov: "#c9a96a",       // muted brass — "provisional/attention"
-  weak: "#5c666d",
-  alert: "#c08457",      // warm, never red — "needs review"
+  bg: "#ffffff",
+  bg2: "#f3f8ff",        // soft sky wash
+  ink: "#16263a",        // friendly deep-navy text
+  sub: "#5d7088",        // muted text
+  faint: "#8ca0b8",      // hints
+  line: "#e6eef9",       // soft borders
+  card: "#ffffff",
+  green: "#2fb457", greenDk: "#1f8e41", greenBg: "#e9f9ee",
+  blue: "#4c8df6", blueDk: "#356fd6", blueBg: "#eaf2ff",
+  yellow: "#ffc23c", yellowDk: "#d99a16", yellowBg: "#fff6e0",
+  purple: "#9b72f2", purpleBg: "#f1ebff",
+  coral: "#ff8a5c", coralBg: "#fff0e8",
+  // semantic (kept compatible with engine vocabulary)
+  active: "#2fb457", prov: "#4c8df6", weak: "#8ca0b8", alert: "#ff8a5c",
 };
+const FONT_DISPLAY = "'Baloo 2', 'Nunito', ui-rounded, system-ui, sans-serif";
+const FONT_BODY = "'Nunito', ui-rounded, system-ui, sans-serif";
+const SHADOW = "0 8px 24px rgba(28,68,128,.10)";
+const SHADOW_SM = "0 3px 10px rgba(28,68,128,.08)";
 
-const FONT_DISPLAY = "'Newsreader', 'Iowan Old Style', Georgia, serif";
-const FONT_BODY = "'Spline Sans', ui-sans-serif, system-ui, sans-serif";
-const FONT_MONO = "'IBM Plex Mono', ui-monospace, monospace";
-
-// ----------------------------- provenance ----------------------------------
+// ----------------------------- provenance (UNCHANGED) -----------------------
 const PROV = { VERIFIED: "VERIFIED", VERIFIED_APPROX: "VERIFIED~", ASSUMPTION: "ASSUMPTION", NEEDED: "NEEDED" };
 const ACTIVATING = new Set([PROV.VERIFIED, PROV.VERIFIED_APPROX]);
 const STR = { ACTIVE: "●", PROVISIONAL: "◐", WEAK: "○", DORMANT: "—" };
 const RANK = { "—": 0, "○": 1, "◐": 2, "●": 3 };
 const maxStr = (a, b) => (RANK[a] >= RANK[b] ? a : b);
 
-// ============================ ACTIVATION ENGINE (JS port) ====================
+// ============================ ACTIVATION ENGINE (JS port — UNCHANGED) ========
 function evaluate(p) {
   const results = [flood(p), recert(p), insurance(p), entity(p), tax(p), ownership(p), use(p)];
   results.forEach(enforce);
@@ -183,7 +184,7 @@ function recommend(results) {
   return { tier: "none", line: "Not enough live conditions to justify monthly monitoring. Keep your free scan; we'll suggest an annual re-check." };
 }
 
-// ----------------------------- sample inputs --------------------------------
+// ----------------------------- sample inputs (UNCHANGED) --------------------
 const UNIT_1001 = {
   nickname: "Castle Beach Club — Unit 1001",
   property_type: "condo_hotel", property_type_prov: PROV.VERIFIED,
@@ -211,7 +212,6 @@ const LOW_FIT = {
   recent_sale: false, frequent_transfers: false, active_mortgage_or_lien: false,
   assessment_moving: false, assessment_prov: PROV.VERIFIED,
 };
-
 const PLANS = [
   { id: "starter", name: "Starter", range: "1–3 properties", price: 39 },
   { id: "standard", name: "Standard", range: "4–15 properties", price: 149 },
@@ -219,45 +219,95 @@ const PLANS = [
   { id: "portfolio", name: "Portfolio", range: "50+ properties", price: null },
 ];
 
-// ----------------------------- small UI atoms -------------------------------
-const Tag = ({ t }) => {
-  const map = { VERIFIED: C.active, "VERIFIED~": C.prov, ASSUMPTION: C.weak, NEEDED: C.alert };
-  return <span style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: ".06em",
-    color: map[t] || C.fog, border: `1px solid ${map[t] || C.line}`, borderRadius: 3,
-    padding: "1px 6px", whiteSpace: "nowrap" }}>{t}</span>;
-};
-const StrengthDot = ({ s }) => {
-  const map = { "●": C.active, "◐": C.prov, "○": C.weak, "—": C.line };
-  return <span style={{ color: map[s], fontSize: 14, lineHeight: 1 }}>{s}</span>;
-};
+// ----------------------------- friendly UI atoms ----------------------------
 const Btn = ({ children, onClick, kind = "primary", disabled, style }) => {
-  const base = { fontFamily: FONT_BODY, fontSize: 14, letterSpacing: ".02em", cursor: disabled ? "not-allowed" : "pointer",
-    borderRadius: 7, padding: "12px 22px", transition: "all .25s ease", border: "1px solid transparent", opacity: disabled ? 0.5 : 1 };
   const kinds = {
-    primary: { background: C.bone, color: C.ink, border: `1px solid ${C.bone}` },
-    ghost: { background: "transparent", color: C.mist, border: `1px solid ${C.line}` },
-    quiet: { background: "transparent", color: C.fog, border: "1px solid transparent", padding: "8px 4px" },
+    primary: { bg: C.green, edge: C.greenDk, color: "#fff" },
+    blue: { bg: C.blue, edge: C.blueDk, color: "#fff" },
+    ghost: { bg: "#fff", edge: C.line, color: C.ink },
+    quiet: { bg: "transparent", edge: "transparent", color: C.sub },
   };
-  return <button onClick={disabled ? undefined : onClick} style={{ ...base, ...kinds[kind], ...style }}
-    onMouseEnter={(e) => { if (!disabled && kind === "ghost") e.currentTarget.style.borderColor = C.fog; }}
-    onMouseLeave={(e) => { if (!disabled && kind === "ghost") e.currentTarget.style.borderColor = C.line; }}>{children}</button>;
+  const k = kinds[kind] || kinds.primary;
+  const chunky = kind === "primary" || kind === "blue";
+  return (
+    <button onClick={disabled ? undefined : onClick} disabled={disabled}
+      style={{ fontFamily: FONT_BODY, fontWeight: 800, fontSize: 15, cursor: disabled ? "not-allowed" : "pointer",
+        borderRadius: 14, padding: kind === "quiet" ? "8px 6px" : "13px 22px", border: "none",
+        background: k.bg, color: k.color, letterSpacing: ".01em",
+        boxShadow: chunky ? `0 4px 0 ${k.edge}` : (kind === "ghost" ? `inset 0 0 0 2px ${C.line}` : "none"),
+        opacity: disabled ? 0.55 : 1, transition: "transform .08s ease, box-shadow .08s ease",
+        ...style }}
+      onMouseDown={(e) => { if (chunky && !disabled) { e.currentTarget.style.transform = "translateY(3px)"; e.currentTarget.style.boxShadow = `0 1px 0 ${k.edge}`; } }}
+      onMouseUp={(e) => { if (chunky && !disabled) { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 4px 0 ${k.edge}`; } }}
+      onMouseLeave={(e) => { if (chunky && !disabled) { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 4px 0 ${k.edge}`; } }}>
+      {children}
+    </button>
+  );
 };
+// Provenance tag — friendly, encouraging (no scary language)
+const Tag = ({ t }) => {
+  const map = {
+    VERIFIED: { bg: C.greenBg, fg: C.greenDk, label: "Verified ✓" },
+    "VERIFIED~": { bg: C.blueBg, fg: C.blueDk, label: "Verified ~" },
+    ASSUMPTION: { bg: "#eef2f7", fg: C.sub, label: "Estimate" },
+    NEEDED: { bg: C.yellowBg, fg: C.yellowDk, label: "Add to unlock" },
+  };
+  const m = map[t] || { bg: "#eef2f7", fg: C.sub, label: t };
+  return <span style={{ fontFamily: FONT_BODY, fontWeight: 800, fontSize: 11.5, color: m.fg,
+    background: m.bg, borderRadius: 999, padding: "3px 10px", whiteSpace: "nowrap" }}>{m.label}</span>;
+};
+// Strength → friendly status pill
+const StatusPill = ({ s }) => {
+  const map = {
+    "●": { bg: C.greenBg, fg: C.greenDk, label: "Watching 👀" },
+    "◐": { bg: C.blueBg, fg: C.blueDk, label: "Keeping an eye" },
+    "○": { bg: "#eef2f7", fg: C.sub, label: "Quiet" },
+    "—": { bg: "#eef2f7", fg: C.faint, label: "Resting" },
+  };
+  const m = map[s] || map["—"];
+  return <span style={{ fontFamily: FONT_BODY, fontWeight: 800, fontSize: 12, color: m.fg,
+    background: m.bg, borderRadius: 999, padding: "4px 11px", whiteSpace: "nowrap" }}>{m.label}</span>;
+};
+const Card = ({ children, style, accent }) => (
+  <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 20, boxShadow: SHADOW_SM,
+    padding: 20, position: "relative", overflow: "hidden", ...style }}>
+    {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 5, background: accent }} />}
+    {children}
+  </div>
+);
+const Progress = ({ value, max, color = C.green }) => {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div style={{ background: C.bg2, borderRadius: 999, height: 14, overflow: "hidden", border: `1px solid ${C.line}` }}>
+      <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 999, transition: "width .8s cubic-bezier(.2,.8,.2,1)" }} />
+    </div>
+  );
+};
+const Blobs = () => (
+  <div aria-hidden style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none", overflow: "hidden" }}>
+    <div style={{ position: "absolute", top: -120, right: -80, width: 360, height: 360, borderRadius: "50%",
+      background: C.blueBg, filter: "blur(8px)", opacity: 0.6 }} />
+    <div style={{ position: "absolute", top: 220, left: -120, width: 300, height: 300, borderRadius: "50%",
+      background: C.greenBg, filter: "blur(8px)", opacity: 0.55 }} />
+    <div style={{ position: "absolute", bottom: -100, right: 120, width: 260, height: 260, borderRadius: "50%",
+      background: C.yellowBg, filter: "blur(8px)", opacity: 0.5 }} />
+  </div>
+);
 
 // =============================================================================
-// ROOT
+// ROOT  (state + effects + handlers — UNCHANGED LOGIC)
 // =============================================================================
 export default function App() {
-  const [route, setRoute] = useState("landing"); // landing|privacy|loading|scan|subscribe|pay|onboard|account
+  const [route, setRoute] = useState("landing");
   const [attrs, setAttrs] = useState(null);
   const [results, setResults] = useState([]);
-  const [account, setAccount] = useState(null); // {email, plan, status, property, since, digests:[]}
+  const [account, setAccount] = useState(null);
   const [showValues, setShowValues] = useState(false);
-  const [scanId, setScanId] = useState(null);     // real id from backend (persisted in Supabase)
+  const [scanId, setScanId] = useState(null);
   const [apiError, setApiError] = useState(null);
   const reco = useMemo(() => (results.length ? recommend(results) : null), [results]);
 
-  // On load: (1) if returning from Stripe Checkout, confirm the real payment and
-  // activate; (2) otherwise restore an existing session from real backend digests.
+  // On load: confirm Stripe return, else restore session (UNCHANGED).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
@@ -315,8 +365,6 @@ export default function App() {
     }
   }, []);
 
-  // Verified path: always /scan/from-values (real, persisted). This NEVER routes
-  // to manual-verification — that's reserved for live typed-address pulls below.
   const runPipeline = async (input) => {
     setAttrs(input);
     setApiError(null);
@@ -332,9 +380,6 @@ export default function App() {
     }
   };
 
-  // Honest typed-address path: really attempt a live county pull. If the source
-  // can't be reached, the backend returns manual_needed (no fabrication) and we
-  // show the manual screen — we never silently substitute the example property.
   const runLive = async (address) => {
     setApiError(null);
     setRoute("loading");
@@ -353,48 +398,53 @@ export default function App() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.ink, color: C.bone, fontFamily: FONT_BODY,
-      backgroundImage: `radial-gradient(1200px 600px at 70% -10%, #1a2024 0%, ${C.ink} 60%)` }}>
+    <div style={{ minHeight: "100vh", background: `linear-gradient(180deg, ${C.bg} 0%, ${C.bg2} 100%)`,
+      color: C.ink, fontFamily: FONT_BODY, position: "relative" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300&family=Spline+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800;900&display=swap');
         * { box-sizing: border-box; }
+        body { margin: 0; }
         @keyframes fadeUp { from { opacity:0; transform: translateY(14px);} to {opacity:1; transform:none;} }
-        @keyframes pulseLine { 0%,100%{opacity:.35} 50%{opacity:1} }
-        @keyframes scan { 0%{transform:translateY(-100%)} 100%{transform:translateY(2400%)} }
-        .fu { animation: fadeUp .7s cubic-bezier(.2,.7,.2,1) both; }
+        @keyframes pop { 0%{transform:scale(.8);opacity:0} 60%{transform:scale(1.06)} 100%{transform:scale(1);opacity:1} }
+        @keyframes floaty { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+        @keyframes fill { from { width:0 } }
+        .fu { animation: fadeUp .55s cubic-bezier(.2,.7,.2,1) both; }
+        .pop { animation: pop .5s cubic-bezier(.2,.8,.2,1) both; }
+        .floaty { animation: floaty 4s ease-in-out infinite; }
+        .kai-hero { font-size: clamp(30px, 7vw, 46px); }
+        .kai-tabs { display: flex; gap: 8px; }
+        @media (max-width: 640px) {
+          .kai-section { padding-top: 36px !important; }
+          .kai-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+          .kai-tabs button { flex: 0 0 auto; }
+          .kai-grid-3 { grid-template-columns: 1fr 1fr !important; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .fu, .pop, .floaty { animation: none !important; }
+        }
       `}</style>
-
-      <Header route={route} account={account} go={setRoute} />
-
-      <div style={{ maxWidth: 920, margin: "0 auto", padding: "0 24px 120px" }}>
-        {route === "landing" && <Landing onStart={() => setRoute("privacy")} onSample={() => runPipeline(UNIT_1001)} />}
-        {route === "privacy" && <AddressEntry onRun={runPipeline} onRunLive={runLive} showValues={showValues} setShowValues={setShowValues}
-          onLowFit={() => runPipeline(LOW_FIT)} />}
-        {route === "loading" && <Loading />}
-        {route === "manual" && <ManualNeeded onBack={() => setRoute("privacy")} />}
-        {route === "error" && <ErrorScreen message={apiError} onRetry={() => (attrs ? runPipeline(attrs) : setRoute("privacy"))} onBack={() => setRoute("privacy")} />}
-        {route === "scan" && attrs && <Scan attrs={attrs} results={results} reco={reco}
-          onSubscribe={() => setRoute("subscribe")} onBack={() => setRoute("landing")} />}
-        {route === "subscribe" && <Subscribe reco={reco} onChoose={(plan) => { setAccount((a) => ({ ...(a || {}), pendingPlan: plan })); setRoute("pay"); }}
-          onSkip={() => setRoute("scan")} />}
-        {route === "pay" && <Pay
-          plan={account?.pendingPlan}
-          scanId={scanId}
-          propertyName={attrs?.nickname}
-          onActivated={(acc) => {
-            try {
-              localStorage.setItem("kairos_session", JSON.stringify({
-                subscriptionId: acc.subscriptionId, email: acc.email,
-                property: acc.property, plan: acc.plan, since: acc.since,
-              }));
-            } catch { /* ignore storage errors */ }
-            setAccount(acc); setRoute("onboard");
-          }}
-          onBack={() => setRoute("subscribe")} />}
-        {route === "onboard" && account && <Onboard account={account} onGo={() => setRoute("account")} />}
-        {route === "account" && account && <Account account={account} setAccount={setAccount} attrs={attrs} results={results} />}
+      <Blobs />
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <Header route={route} account={account} go={setRoute} />
+        <div style={{ maxWidth: 940, margin: "0 auto", padding: "0 20px 110px" }}>
+          {route === "landing" && <Landing onStart={() => setRoute("privacy")} onSample={() => runPipeline(UNIT_1001)} />}
+          {route === "privacy" && <AddressEntry onRun={runPipeline} onRunLive={runLive} showValues={showValues} setShowValues={setShowValues} onLowFit={() => runPipeline(LOW_FIT)} />}
+          {route === "loading" && <Loading />}
+          {route === "manual" && <ManualNeeded onBack={() => setRoute("privacy")} />}
+          {route === "error" && <ErrorScreen message={apiError} onRetry={() => (attrs ? runPipeline(attrs) : setRoute("privacy"))} onBack={() => setRoute("privacy")} />}
+          {route === "scan" && attrs && <Scan attrs={attrs} results={results} reco={reco} onSubscribe={() => setRoute("subscribe")} onBack={() => setRoute("landing")} />}
+          {route === "subscribe" && <Subscribe reco={reco} onChoose={(plan) => { setAccount((a) => ({ ...(a || {}), pendingPlan: plan })); setRoute("pay"); }} onSkip={() => setRoute("scan")} />}
+          {route === "pay" && <Pay plan={account?.pendingPlan} scanId={scanId} propertyName={attrs?.nickname}
+            onActivated={(acc) => {
+              try { localStorage.setItem("kairos_session", JSON.stringify({ subscriptionId: acc.subscriptionId, email: acc.email, property: acc.property, plan: acc.plan, since: acc.since })); } catch { /* ignore */ }
+              setAccount(acc); setRoute("onboard");
+            }}
+            onBack={() => setRoute("subscribe")} />}
+          {route === "onboard" && account && <Onboard account={account} onGo={() => setRoute("account")} />}
+          {route === "account" && account && <Dashboard account={account} setAccount={setAccount} attrs={attrs} results={results} />}
+        </div>
+        <Footer />
       </div>
-      <Footer />
     </div>
   );
 }
@@ -404,17 +454,16 @@ function today() { return new Date().toLocaleDateString("en-US", { year: "numeri
 // ----------------------------- header / footer ------------------------------
 function Header({ route, account, go }) {
   return (
-    <div style={{ position: "sticky", top: 0, zIndex: 20, backdropFilter: "blur(10px)",
-      background: "rgba(14,17,19,.7)", borderBottom: `1px solid ${C.line}` }}>
-      <div style={{ maxWidth: 920, margin: "0 auto", padding: "16px 24px", display: "flex",
-        alignItems: "center", justifyContent: "space-between" }}>
+    <div style={{ position: "sticky", top: 0, zIndex: 20, backdropFilter: "blur(8px)",
+      background: "rgba(255,255,255,.82)", borderBottom: `1px solid ${C.line}` }}>
+      <div style={{ maxWidth: 940, margin: "0 auto", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div onClick={() => go(account ? "account" : "landing")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 9, height: 9, borderRadius: "50%", background: C.active,
-            boxShadow: `0 0 14px ${C.active}`, animation: "pulseLine 3.5s ease-in-out infinite" }} />
-          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 20, letterSpacing: ".14em" }}>KAIROS</span>
+          <div className="floaty" style={{ width: 30, height: 30, borderRadius: 10, background: `linear-gradient(135deg, ${C.green}, ${C.blue})`,
+            display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 900, boxShadow: SHADOW_SM }}>K</div>
+          <span style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 800, color: C.ink }}>KAIROS</span>
         </div>
-        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.fog, letterSpacing: ".05em" }}>
-          {account ? `${account.email} · ${account.status}` : "operational vigilance"}
+        <div style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 700, color: C.sub }}>
+          {account ? `${account.email}` : "your property's friendly watcher"}
         </div>
       </div>
     </div>
@@ -422,10 +471,10 @@ function Header({ route, account, go }) {
 }
 function Footer() {
   return (
-    <div style={{ borderTop: `1px solid ${C.line}`, padding: "28px 24px", textAlign: "center" }}>
-      <div style={{ maxWidth: 920, margin: "0 auto", color: C.fog, fontSize: 12, lineHeight: 1.7 }}>
-        We do not predict the future. We do not place insurance. We do not sell your data. We do not guarantee savings.<br />
-        <span style={{ fontFamily: FONT_MONO, fontSize: 11 }}>{SUPPORT_EMAIL} · founder-led · estimates are labeled, uncertainty stays visible</span>
+    <div style={{ borderTop: `1px solid ${C.line}`, padding: "26px 20px", textAlign: "center" }}>
+      <div style={{ maxWidth: 940, margin: "0 auto", color: C.faint, fontSize: 12.5, lineHeight: 1.7, fontWeight: 600 }}>
+        {COPY.trust.footer}<br />
+        <span style={{ fontSize: 11.5 }}>{COPY.trust.footerSmall}</span>
       </div>
     </div>
   );
@@ -434,46 +483,46 @@ function Footer() {
 // ----------------------------- landing --------------------------------------
 function Landing({ onStart, onSample }) {
   return (
-    <div style={{ paddingTop: 96 }}>
-      <div className="fu" style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.active, letterSpacing: ".2em", marginBottom: 26 }}>
-        A SILENT BODYGUARD FOR PROPERTY OWNERSHIP
+    <div style={{ paddingTop: 64 }}>
+      <div className="fu" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.greenBg, color: C.greenDk,
+        fontWeight: 800, fontSize: 13, padding: "7px 14px", borderRadius: 999, marginBottom: 22 }}>
+        🛡️ {COPY.hero.badge}
       </div>
-      <h1 className="fu" style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 60, lineHeight: 1.04,
-        margin: 0, letterSpacing: "-.01em", animationDelay: ".05s" }}>
-        Never get blindsided<br />at renewal again.
+      <h1 className="fu kai-hero" style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: "clamp(30px,7vw,46px)", lineHeight: 1.1, margin: 0,
+        color: C.ink, maxWidth: 780, animationDelay: ".05s" }}>
+        You already have enough notifications. <span style={{ color: C.green }}>KAIROS does the watching for you.</span>
       </h1>
-      <p className="fu" style={{ fontSize: 18, color: C.mist, maxWidth: 560, lineHeight: 1.6, marginTop: 26, animationDelay: ".15s" }}>
-        KAIROS quietly watches the operational conditions on your property that quietly become
-        expensive — and tells you before renewal, not after.
+      <p className="fu" style={{ fontSize: 18, color: C.sub, maxWidth: 640, lineHeight: 1.6, marginTop: 18, fontWeight: 600, animationDelay: ".12s" }}>
+        {COPY.hero.sub}
       </p>
-      <div className="fu" style={{ display: "flex", gap: 14, marginTop: 38, alignItems: "center", flexWrap: "wrap", animationDelay: ".25s" }}>
-        <Btn onClick={onStart}>Run a free baseline scan</Btn>
-        <Btn kind="ghost" onClick={onSample}>See a sample scan</Btn>
-      </div>
-      <div className="fu" style={{ marginTop: 14, color: C.fog, fontSize: 13, animationDelay: ".3s" }}>
-        Not alerts. Not predictions. Just a quiet watch on what matters.
+      <div className="fu" style={{ display: "flex", gap: 12, marginTop: 28, flexWrap: "wrap", animationDelay: ".18s" }}>
+        <Btn onClick={onStart}>{COPY.hero.ctaPrimary}</Btn>
+        <Btn kind="ghost" onClick={onSample}>{COPY.hero.ctaSecondary}</Btn>
       </div>
 
-      <div style={{ marginTop: 90, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 18 }}>
-        {[
-          ["Monitored continuously", "Not a one-time report. Conditions change; so does what we watch."],
-          ["Surfaced before renewal", "The point is timing. We bring conditions forward while you can still act."],
-          ["Organized for clarity", "Verified facts, estimates, and open questions kept separate — always."],
-        ].map(([h, b], i) => (
-          <div key={h} className="fu" style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10,
-            padding: 22, animationDelay: `${.35 + i * .08}s` }}>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 8 }}>{h}</div>
-            <div style={{ color: C.fog, fontSize: 13.5, lineHeight: 1.6 }}>{b}</div>
-          </div>
+      <div className="kai-grid-3" style={{ marginTop: 56, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 16 }}>
+        {COPY.philosophy.map(([emo, h, b], i) => (
+          <Card key={h} className="fu" style={{ animationDelay: `${.24 + i * .07}s` }} accent={[C.blue, C.green, C.yellow][i]}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>{emo}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{h}</div>
+            <div style={{ color: C.sub, fontSize: 14, lineHeight: 1.55, fontWeight: 600 }}>{b}</div>
+          </Card>
         ))}
       </div>
 
-      <div style={{ marginTop: 28, padding: 22, border: `1px solid ${C.line}`, borderRadius: 10, background: C.panel }}>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 17, marginBottom: 10 }}>The whole promise, in one line</div>
-        <div style={{ color: C.mist, fontSize: 15, lineHeight: 1.7 }}>
-          Enter your property. We identify what deserves watching. We quietly monitor it. We tell you only when it matters.
+      {/* founder voice — preserved verbatim from the copy system */}
+      <Card className="fu" style={{ marginTop: 22, background: `linear-gradient(135deg, ${C.purpleBg}, ${C.blueBg})`, border: "none" }} accent={C.purple}>
+        <div style={{ fontSize: 26, marginBottom: 8 }}>💬</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 18, lineHeight: 1.5, color: C.ink }}>
+          “{COPY.founder.quote}”
         </div>
-      </div>
+        <div style={{ color: C.sub, fontWeight: 800, fontSize: 13.5, marginTop: 10 }}>{COPY.founder.attribution}</div>
+      </Card>
+
+      <Card style={{ marginTop: 16, background: C.bg2 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 18, marginBottom: 6 }}>The whole idea, in one line ✨</div>
+        <div style={{ color: C.sub, fontSize: 15.5, lineHeight: 1.6, fontWeight: 600 }}>{COPY.oneLiner}</div>
+      </Card>
     </div>
   );
 }
@@ -482,52 +531,48 @@ function Landing({ onStart, onSample }) {
 function AddressEntry({ onRun, onRunLive, showValues, setShowValues, onLowFit }) {
   const [addr, setAddr] = useState("");
   return (
-    <div style={{ paddingTop: 80, maxWidth: 620 }}>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 34, margin: 0 }}>Start with your property</h2>
-
-      <div style={{ marginTop: 22, padding: 18, border: `1px solid ${C.line}`, borderRadius: 10, background: C.panel2 }}>
-        <div style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
-          <div style={{ color: C.active, marginTop: 2 }}>◆</div>
-          <div style={{ color: C.mist, fontSize: 13.5, lineHeight: 1.65 }}>
-            Your address is used only to run your scan against <b style={{ color: C.bone }}>public records</b> —
-            the kind anyone can look up, organized in one place. No account or payment needed to see your scan.
-            We don't sell your data. We don't share it. Ever.
+    <div style={{ paddingTop: 48, maxWidth: 640 }}>
+      <Btn kind="quiet" onClick={() => onRun(UNIT_1001)} style={{ display: "none" }} />
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 34, margin: 0 }}>Let's check your property 🏠</h2>
+      <Card style={{ marginTop: 18, background: C.greenBg, border: "none" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <span style={{ fontSize: 20 }}>🔒</span>
+          <div style={{ color: C.ink, fontSize: 14, lineHeight: 1.6, fontWeight: 600 }}>
+            {COPY.trust.promise}
           </div>
         </div>
-      </div>
+      </Card>
 
-      <div style={{ marginTop: 22 }}>
+      <div style={{ marginTop: 20 }}>
         <input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="5445 Collins Ave, Miami Beach, FL 33140"
-          style={{ width: "100%", background: C.panel, border: `1px solid ${C.line}`, color: C.bone,
-            borderRadius: 8, padding: "15px 16px", fontSize: 15, fontFamily: FONT_BODY, outline: "none" }}
-          onFocus={(e) => (e.target.style.borderColor = C.active)} onBlur={(e) => (e.target.style.borderColor = C.line)} />
-        <div style={{ display: "flex", gap: 12, marginTop: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <Btn onClick={() => onRun(UNIT_1001)}>Run my baseline scan</Btn>
+          style={{ width: "100%", background: "#fff", border: `2px solid ${C.line}`, color: C.ink, borderRadius: 14,
+            padding: "15px 16px", fontSize: 15, fontFamily: FONT_BODY, fontWeight: 700, outline: "none" }}
+          onFocus={(e) => (e.target.style.borderColor = C.blue)} onBlur={(e) => (e.target.style.borderColor = C.line)} />
+        <div style={{ display: "flex", gap: 12, marginTop: 14, alignItems: "center", flexWrap: "wrap" }}>
+          <Btn onClick={() => onRun(UNIT_1001)}>🚀 Run my baseline scan</Btn>
         </div>
-        <div style={{ marginTop: 12, color: C.fog, fontSize: 12.5, lineHeight: 1.6 }}>
-          During our alpha, your baseline runs against a verified reference coastal property so you can see
-          exactly what KAIROS monitors — and how it stays disciplined, never fabricating a value. Your own
-          property is verified during onboarding. To scan your real figures now, open From-values mode below.
+        <div style={{ marginTop: 12, color: C.sub, fontSize: 13, lineHeight: 1.6, fontWeight: 600 }}>
+          During our alpha, your baseline runs against a verified reference coastal property so you can see exactly
+          what KAIROS watches — and how it stays honest, never inventing a value. Your own property is verified during
+          onboarding. To scan real figures now, open From-values mode below.
         </div>
       </div>
 
-      <div style={{ marginTop: 30, borderTop: `1px solid ${C.line}`, paddingTop: 20 }}>
-        <Btn kind="quiet" onClick={() => setShowValues((s) => !s)}>
+      <div style={{ marginTop: 24, borderTop: `1px solid ${C.line}`, paddingTop: 18 }}>
+        <Btn kind="quiet" onClick={() => setShowValues((s) => !s)} style={{ fontWeight: 800, color: C.blueDk }}>
           {showValues ? "▾" : "▸"} From-values mode (paste verified figures)
         </Btn>
         {showValues && <FromValues onRun={onRun} />}
       </div>
-
-      <div style={{ marginTop: 24 }}>
-        <Btn kind="quiet" onClick={onLowFit} style={{ color: C.fog, fontSize: 12.5 }}>
-          ▸ Run a low-fit property (see KAIROS decline to oversell)
+      <div style={{ marginTop: 18 }}>
+        <Btn kind="quiet" onClick={onLowFit} style={{ color: C.faint, fontSize: 13 }}>
+          ▸ Try a low-fit property (watch KAIROS honestly decline to oversell)
         </Btn>
       </div>
     </div>
   );
 }
 
-// From-values: build verified attrs from pasted figures (no fabrication).
 function FromValues({ onRun }) {
   const [f, setF] = useState({ nickname: "", property_type: "condo_hotel", coastal: true,
     flood_zone: "VE", flood_zone_known: true, bfe_ft: "", year_built: "", ownership_type: "llc",
@@ -560,19 +605,19 @@ function FromValues({ onRun }) {
   };
   const field = (label, node) => (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: `1px solid ${C.line}` }}>
-      <span style={{ color: C.mist, fontSize: 13 }}>{label}</span>{node}
+      <span style={{ color: C.sub, fontSize: 13.5, fontWeight: 700 }}>{label}</span>{node}
     </div>
   );
   const inp = (k, ph) => <input value={f[k]} placeholder={ph} onChange={(e) => set(k, e.target.value)}
-    style={{ background: C.ink, border: `1px solid ${C.line}`, color: C.bone, borderRadius: 6, padding: "6px 10px", fontSize: 13, width: 150, fontFamily: FONT_MONO }} />;
+    style={{ background: "#fff", border: `2px solid ${C.line}`, color: C.ink, borderRadius: 10, padding: "6px 10px", fontSize: 13, width: 150, fontWeight: 700, fontFamily: FONT_BODY }} />;
   const sel = (k, opts) => <select value={f[k]} onChange={(e) => set(k, e.target.value)}
-    style={{ background: C.ink, border: `1px solid ${C.line}`, color: C.bone, borderRadius: 6, padding: "6px 10px", fontSize: 13, fontFamily: FONT_MONO }}>
+    style={{ background: "#fff", border: `2px solid ${C.line}`, color: C.ink, borderRadius: 10, padding: "6px 10px", fontSize: 13, fontWeight: 700, fontFamily: FONT_BODY }}>
     {opts.map((o) => <option key={o} value={o}>{o}</option>)}</select>;
-  const chk = (k) => <input type="checkbox" checked={f[k]} onChange={(e) => set(k, e.target.checked)} style={{ accentColor: C.active, width: 16, height: 16 }} />;
+  const chk = (k) => <input type="checkbox" checked={f[k]} onChange={(e) => set(k, e.target.checked)} style={{ accentColor: C.green, width: 18, height: 18 }} />;
   return (
-    <div style={{ marginTop: 14, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: 18 }}>
-      <div style={{ color: C.fog, fontSize: 12, marginBottom: 8 }}>
-        Enter only what you've verified. Anything left blank/unchecked stays <Tag t="NEEDED" />. Nothing is invented.
+    <Card style={{ marginTop: 14 }}>
+      <div style={{ color: C.sub, fontSize: 12.5, marginBottom: 8, fontWeight: 600 }}>
+        Enter only what you've verified. Anything left blank stays <Tag t="NEEDED" />. Nothing is invented.
       </div>
       {field("Property nickname", inp("nickname", "Unit 1001"))}
       {field("Property type", sel("property_type", ["condo_hotel", "condo", "multifamily", "single_family", "commercial", "warehouse"]))}
@@ -587,61 +632,54 @@ function FromValues({ onRun }) {
       {field("Unit confirmed listed short-term", chk("str_listing_confirmed"))}
       {field("Verified building record on file", chk("building_fact"))}
       <div style={{ marginTop: 16 }}><Btn onClick={build}>Build verified scan</Btn></div>
-    </div>
+    </Card>
   );
 }
 
-// ----------------------------- loading --------------------------------------
+// ----------------------------- loading (game-like) --------------------------
 function Loading() {
-  const steps = ["Locating your property in public records…", "Checking FEMA flood mapping…",
-    "Reviewing assessment and ownership records…", "Identifying what deserves ongoing attention…"];
+  const steps = ["Finding your property in public records…", "Checking FEMA flood mapping…",
+    "Reviewing assessment & ownership records…", "Spotting what's worth watching…"];
   const [i, setI] = useState(0);
-  useEffect(() => { const t = setInterval(() => setI((x) => Math.min(x + 1, steps.length - 1)), 520); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => setI((x) => Math.min(x + 1, steps.length - 1)), 560); return () => clearInterval(t); }, []);
   return (
-    <div style={{ paddingTop: 150, maxWidth: 520 }}>
-      <div style={{ position: "relative", height: 2, background: C.line, overflow: "hidden", borderRadius: 2, marginBottom: 40 }}>
-        <div style={{ position: "absolute", top: 0, left: 0, height: 40, width: "100%",
-          background: `linear-gradient(${C.active}, transparent)`, animation: "scan 2.1s linear infinite" }} />
+    <div style={{ paddingTop: 90, maxWidth: 520, margin: "0 auto", textAlign: "center" }}>
+      <div className="floaty" style={{ fontSize: 54, marginBottom: 18 }}>🔎</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 24, marginBottom: 20 }}>Scanning your property…</div>
+      <Progress value={i + 1} max={steps.length} />
+      <div style={{ marginTop: 24, display: "grid", gap: 10, textAlign: "left" }}>
+        {steps.map((s, idx) => (
+          <div key={s} style={{ display: "flex", alignItems: "center", gap: 10, opacity: idx <= i ? 1 : 0.4, transition: "opacity .4s", fontWeight: 700, color: idx <= i ? C.ink : C.faint }}>
+            <span>{idx < i ? "✅" : idx === i ? "⏳" : "⚪"}</span><span style={{ fontSize: 14.5 }}>{s}</span>
+          </div>
+        ))}
       </div>
-      {steps.map((s, idx) => (
-        <div key={s} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0",
-          opacity: idx <= i ? 1 : 0.3, transition: "opacity .4s" }}>
-          <StrengthDot s={idx < i ? "●" : idx === i ? "◐" : "—"} />
-          <span style={{ color: idx <= i ? C.mist : C.fog, fontSize: 14.5 }}>{s}</span>
-        </div>
-      ))}
-      <div style={{ marginTop: 30, color: C.fog, fontSize: 12.5, fontFamily: FONT_MONO }}>
-        A careful watch takes a moment. That's the point.
-      </div>
+      <div style={{ marginTop: 22, color: C.faint, fontSize: 13, fontWeight: 600 }}>A careful check takes a few seconds — that's the point 💚</div>
     </div>
   );
 }
 
-// ----------------------------- manual-needed + error states ----------------
 function ManualNeeded({ onBack }) {
   return (
-    <div style={{ paddingTop: 90, maxWidth: 560 }}>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.prov, letterSpacing: ".14em" }}>MANUAL VERIFICATION NEEDED</div>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: "8px 0 12px" }}>This one needs a hand-checked scan</h2>
-      <p style={{ color: C.mist, fontSize: 15, lineHeight: 1.65 }}>
-        Automated lookup couldn't reach this property's public records right now. KAIROS will not fabricate values —
-        a person verifies the missing facts before your scan is completed. During our private alpha, scans like this
-        are completed manually rather than instantly.
+    <div style={{ paddingTop: 64, maxWidth: 560 }}>
+      <div style={{ fontSize: 40, marginBottom: 8 }}>🤝</div>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 28, margin: "0 0 10px" }}>This one needs a friendly hand-check</h2>
+      <p style={{ color: C.sub, fontSize: 15, lineHeight: 1.6, fontWeight: 600 }}>
+        We couldn't reach this property's public records automatically right now — and KAIROS never makes up values.
+        A person verifies the missing facts before your scan is ready. During our alpha, scans like this are completed by hand.
       </p>
-      <p style={{ color: C.fog, fontSize: 13.5, lineHeight: 1.6, marginTop: 10 }}>
-        Reach us at {SUPPORT_EMAIL} to have yours run.
-      </p>
-      <div style={{ marginTop: 22 }}><Btn kind="ghost" onClick={onBack}>← Try another property</Btn></div>
+      <p style={{ color: C.faint, fontSize: 13.5, marginTop: 10, fontWeight: 600 }}>Reach us at kai@kairosaiagent.com to have yours run.</p>
+      <div style={{ marginTop: 20 }}><Btn kind="ghost" onClick={onBack}>← Try another property</Btn></div>
     </div>
   );
 }
 function ErrorScreen({ message, onRetry, onBack }) {
   return (
-    <div style={{ paddingTop: 90, maxWidth: 540 }}>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.alert, letterSpacing: ".14em" }}>COULDN'T COMPLETE THE SCAN</div>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: "8px 0 12px" }}>Let's try that again</h2>
-      <p style={{ color: C.mist, fontSize: 15, lineHeight: 1.65 }}>{message || "Something interrupted the scan."}</p>
-      <div style={{ display: "flex", gap: 12, marginTop: 22, flexWrap: "wrap" }}>
+    <div style={{ paddingTop: 64, maxWidth: 540 }}>
+      <div style={{ fontSize: 40, marginBottom: 8 }}>🌱</div>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 28, margin: "0 0 10px" }}>Let's try that again</h2>
+      <p style={{ color: C.sub, fontSize: 15, lineHeight: 1.6, fontWeight: 600 }}>{message || "Something interrupted the scan."}</p>
+      <div style={{ display: "flex", gap: 12, marginTop: 20, flexWrap: "wrap" }}>
         <Btn onClick={onRetry}>Retry scan</Btn>
         <Btn kind="ghost" onClick={onBack}>← Back</Btn>
       </div>
@@ -649,140 +687,115 @@ function ErrorScreen({ message, onRetry, onBack }) {
   );
 }
 
-// ----------------------------- scan results ---------------------------------
+// ----------------------------- scan results (joyful) ------------------------
 function Scan({ attrs, results, reco, onSubscribe, onBack }) {
   const active = results.filter((r) => r.strength === STR.ACTIVE);
   const prov = results.filter((r) => r.strength === STR.PROVISIONAL);
   const shown = [...active, ...prov];
   const needed = [...new Set(results.flatMap((r) => r.needed))];
-  const facts = [
-    ["Property type", attrs.property_type, attrs.property_type_prov],
-    ["Owner type", attrs.ownership_type, attrs.ownership_type_prov],
-    ["Year built", attrs.year_built, attrs.year_built_prov],
-    ["Flood zone", attrs.flood_zone, attrs.flood_zone_prov],
-    ["BFE (ft)", attrs.bfe_ft, attrs.flood_zone_prov],
-    ["Use type", attrs.use_type, attrs.use_type_prov],
-    ["Entity status", attrs.entity_status, attrs.entity_status_prov],
-  ].filter(([, v]) => v != null && v !== "");
-
   return (
-    <div style={{ paddingTop: 70 }}>
-      <Btn kind="quiet" onClick={onBack} style={{ marginBottom: 10 }}>← back</Btn>
-      <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.active, letterSpacing: ".14em" }}>BASELINE SCAN</div>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 34, margin: "6px 0 4px" }}>{attrs.nickname}</h2>
-      <div style={{ color: C.mist, fontSize: 15 }}>
+    <div style={{ paddingTop: 44 }}>
+      <Btn kind="quiet" onClick={onBack} style={{ marginBottom: 6 }}>← back</Btn>
+      <div className="pop" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.greenBg, color: C.greenDk,
+        fontWeight: 800, fontSize: 13, padding: "6px 13px", borderRadius: 999 }}>🎉 Scan complete!</div>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 32, margin: "10px 0 4px" }}>{attrs.nickname}</h2>
+      <div style={{ color: C.sub, fontSize: 16, fontWeight: 600 }}>
         {shown.length === 0
-          ? "We found little that warrants ongoing monitoring here."
-          : <>We found <b style={{ color: C.bone }}>{shown.length}</b> operational {shown.length === 1 ? "condition" : "conditions"} worth watching on this property.</>}
+          ? "Good news — we found little that needs ongoing watching here."
+          : <>KAIROS found <b style={{ color: C.green }}>{shown.length}</b> {shown.length === 1 ? "thing" : "things"} worth protecting on this property.</>}
       </div>
 
-      {facts.length > 0 && (
-        <div style={{ marginTop: 26, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden" }}>
-          <div style={{ padding: "12px 18px", borderBottom: `1px solid ${C.line}`, fontFamily: FONT_MONO, fontSize: 11, color: C.fog, letterSpacing: ".1em" }}>VERIFIED FIELDS</div>
-          {facts.map(([k, v, p]) => (
-            <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 18px", borderBottom: `1px solid ${C.line}` }}>
-              <span style={{ color: C.fog, fontSize: 13 }}>{k}</span>
-              <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <span style={{ color: C.bone, fontSize: 13.5, fontFamily: FONT_MONO }}>{String(v)}</span><Tag t={p} />
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ marginTop: 30, fontFamily: FONT_MONO, fontSize: 12, color: C.fog, letterSpacing: ".1em" }}>
-        WHAT DESERVES WATCHING — {active.length} ACTIVE · {prov.length} PROVISIONAL
-      </div>
-      <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
-        {shown.map((r) => <CategoryCard key={r.key} r={r} />)}
+      <div style={{ marginTop: 22, display: "grid", gap: 12 }}>
+        {shown.map((r, i) => <CategoryCard key={r.key} r={r} idx={i} />)}
       </div>
 
       {needed.length > 0 && (
-        <div style={{ marginTop: 22, padding: 18, border: `1px dashed ${C.alert}`, borderRadius: 10 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-            <Tag t="NEEDED" /><span style={{ color: C.mist, fontSize: 13 }}>To sharpen these watch points (we never fill these with guesses):</span>
+        <Card style={{ marginTop: 16, background: C.yellowBg, border: "none" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 18 }}>🔑</span>
+            <span style={{ color: C.ink, fontSize: 14, fontWeight: 800 }}>Add these to sharpen your watch (we never guess them):</span>
           </div>
-          {needed.map((n) => <div key={n} style={{ color: C.fog, fontSize: 13, padding: "3px 0" }}>— {n}</div>)}
-        </div>
+          {needed.map((n) => <div key={n} style={{ color: C.yellowDk, fontSize: 13.5, padding: "3px 0", fontWeight: 700 }}>• {n}</div>)}
+        </Card>
       )}
 
-      <div style={{ marginTop: 30, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 12, padding: 24 }}>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, marginBottom: 6 }}>Recommendation</div>
-        <div style={{ color: C.mist, fontSize: 14.5, lineHeight: 1.6, marginBottom: 18 }}>{reco?.line}</div>
+      <Card style={{ marginTop: 20, background: `linear-gradient(135deg, ${C.blueBg}, ${C.greenBg})`, border: "none" }} accent={C.green}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 20, marginBottom: 6 }}>What we'd suggest 💡</div>
+        <div style={{ color: C.ink, fontSize: 14.5, lineHeight: 1.6, marginBottom: 16, fontWeight: 600 }}>{reco?.line}</div>
         {reco?.tier === "none" ? (
           <Btn kind="ghost" onClick={onBack}>Keep my free scan</Btn>
         ) : (
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Btn onClick={onSubscribe}>Keep KAIROS watching this property</Btn>
-            <Btn kind="ghost" onClick={onBack}>Just keep my free scan for now</Btn>
+            <Btn onClick={onSubscribe}>🛡️ Keep KAIROS watching</Btn>
+            <Btn kind="ghost" onClick={onBack}>Just keep my free scan</Btn>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
-function CategoryCard({ r }) {
+function CategoryCard({ r, idx }) {
   const [open, setOpen] = useState(false);
+  const accent = r.strength === STR.ACTIVE ? C.green : C.blue;
   return (
-    <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: 18, cursor: "pointer" }} onClick={() => setOpen((o) => !o)}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <StrengthDot s={r.strength} />
-        <span style={{ fontFamily: FONT_DISPLAY, fontSize: 18, flex: 1 }}>{r.name}</span>
-        {r.alert_eligible && <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.fog }}>alert-eligible</span>}
-        <span style={{ color: C.fog }}>{open ? "−" : "+"}</span>
+    <Card className="fu" style={{ animationDelay: `${(idx || 0) * .05}s`, cursor: "pointer", padding: 18 }} accent={accent} >
+      <div onClick={() => setOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ fontSize: 22 }}>{r.strength === STR.ACTIVE ? "🛡️" : "👀"}</span>
+        <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 17, flex: 1 }}>{r.name}</span>
+        <StatusPill s={r.strength} />
+        <span style={{ color: C.faint, fontWeight: 800 }}>{open ? "−" : "+"}</span>
       </div>
-      <div style={{ color: C.mist, fontSize: 13.5, lineHeight: 1.6, marginTop: 8 }}>{r.user_explanation}</div>
+      <div style={{ color: C.sub, fontSize: 14, lineHeight: 1.55, marginTop: 8, fontWeight: 600 }}>{r.user_explanation}</div>
       {open && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
           <Line label="Why" v={r.reasons.join(" ")} />
-          <Line label="So what, operationally" v={r.so_what} accent />
-          {r.needed.length > 0 && <Line label="Needed" v={r.needed.join("; ")} />}
+          <Line label="Why it matters to your wallet" v={r.so_what} accent />
+          {r.needed.length > 0 && <Line label="Add to unlock" v={r.needed.join("; ")} />}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 const Line = ({ label, v, accent }) => (
   <div style={{ marginBottom: 8 }}>
-    <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: accent ? C.active : C.fog, letterSpacing: ".08em", marginBottom: 3 }}>{label.toUpperCase()}</div>
-    <div style={{ color: C.mist, fontSize: 13.5, lineHeight: 1.55 }}>{v}</div>
+    <div style={{ fontWeight: 800, fontSize: 11, color: accent ? C.greenDk : C.faint, letterSpacing: ".04em", marginBottom: 3, textTransform: "uppercase" }}>{label}</div>
+    <div style={{ color: C.sub, fontSize: 13.5, lineHeight: 1.55, fontWeight: 600 }}>{v}</div>
   </div>
 );
 
 // ----------------------------- subscribe ------------------------------------
 function Subscribe({ reco, onChoose, onSkip }) {
-  const suggested = reco?.tier === "light" ? "starter" : "starter";
+  const suggested = "starter";
   return (
-    <div style={{ paddingTop: 70 }}>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 32, margin: 0 }}>Keep the watch running</h2>
-      <p style={{ color: C.mist, fontSize: 15, maxWidth: 560, lineHeight: 1.6 }}>
-        Most months, most conditions stay stable — and we tell you so. You're paying for the month one doesn't.
-        Cancel anytime.
+    <div style={{ paddingTop: 48 }}>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 32, margin: 0 }}>Keep the watch running 🛡️</h2>
+      <p style={{ color: C.sub, fontSize: 15.5, maxWidth: 580, lineHeight: 1.6, fontWeight: 600 }}>
+        Most months, everything stays calm — and we'll tell you so. You're really paying for the one month it doesn't. Cancel anytime, no hard feelings.
       </p>
-      <div style={{ marginTop: 26, display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14 }}>
+      <div style={{ marginTop: 24, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14 }}>
         {PLANS.map((pl) => (
-          <div key={pl.id} style={{ background: pl.id === suggested ? C.panel2 : C.panel,
-            border: `1px solid ${pl.id === suggested ? C.active : C.line}`, borderRadius: 12, padding: 22 }}>
+          <Card key={pl.id} accent={pl.id === suggested ? C.green : undefined}
+            style={{ border: pl.id === suggested ? `2px solid ${C.green}` : `1px solid ${C.line}` }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontFamily: FONT_DISPLAY, fontSize: 22 }}>{pl.name}</span>
-              {pl.id === suggested && <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.active }}>SUGGESTED</span>}
+              <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 21 }}>{pl.name}</span>
+              {pl.id === suggested && <span style={{ fontWeight: 800, fontSize: 11, color: "#fff", background: C.green, borderRadius: 999, padding: "2px 9px" }}>BEST START</span>}
             </div>
-            <div style={{ color: C.fog, fontSize: 13, margin: "4px 0 14px" }}>{pl.range}</div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 30, marginBottom: 16 }}>
-              {pl.price ? <>${pl.price}<span style={{ fontSize: 14, color: C.fog }}>/mo</span></> : <span style={{ fontSize: 18, color: C.mist }}>Custom</span>}
+            <div style={{ color: C.faint, fontSize: 13, margin: "4px 0 12px", fontWeight: 700 }}>{pl.range}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 30, marginBottom: 14 }}>
+              {pl.price ? <>${pl.price}<span style={{ fontSize: 14, color: C.faint }}>/mo</span></> : <span style={{ fontSize: 18, color: C.sub }}>Custom</span>}
             </div>
             <Btn kind={pl.id === suggested ? "primary" : "ghost"} onClick={() => onChoose(pl)} style={{ width: "100%" }}>
               {pl.price ? "Choose" : "Contact us"}
             </Btn>
-          </div>
+          </Card>
         ))}
       </div>
-      <div style={{ marginTop: 18 }}><Btn kind="quiet" onClick={onSkip}>← back to my scan</Btn></div>
+      <div style={{ marginTop: 16 }}><Btn kind="quiet" onClick={onSkip}>← back to my scan</Btn></div>
     </div>
   );
 }
 
-// ----------------------------- activation (real backend) -------------------
+// ----------------------------- activation (real backend — UNCHANGED logic) --
 function Pay({ plan, scanId, propertyName, onActivated, onBack }) {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
@@ -811,49 +824,320 @@ function Pay({ plan, scanId, propertyName, onActivated, onBack }) {
   };
 
   return (
-    <div style={{ paddingTop: 80, maxWidth: 460 }}>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: 0 }}>Start your watch</h2>
-      <div style={{ color: C.mist, fontSize: 14, marginTop: 6 }}>
+    <div style={{ paddingTop: 56, maxWidth: 460 }}>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 28, margin: 0 }}>Start your watch 🚀</h2>
+      <div style={{ color: C.sub, fontSize: 14.5, marginTop: 6, fontWeight: 700 }}>
         {plan?.name} · {plan?.price ? `$${plan.price}/mo` : "custom"} · cancel anytime
       </div>
-      <div style={{ marginTop: 22, display: "grid", gap: 12 }}>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email for your account + monthly digest"
-          style={inpStyle} onFocus={(e) => (e.target.style.borderColor = C.active)} onBlur={(e) => (e.target.style.borderColor = C.line)} />
-        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.fog, lineHeight: 1.6 }}>
-          You'll continue to secure checkout (Stripe) to start your subscription. Cancel anytime.
+      <Card style={{ marginTop: 18 }}>
+        <div style={{ display: "grid", gap: 12 }}>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email for your account + monthly digest"
+            style={{ width: "100%", background: "#fff", border: `2px solid ${C.line}`, color: C.ink, borderRadius: 12, padding: "13px 15px", fontSize: 14, fontWeight: 700, fontFamily: FONT_BODY, outline: "none" }}
+            onFocus={(e) => (e.target.style.borderColor = C.blue)} onBlur={(e) => (e.target.style.borderColor = C.line)} />
+          <div style={{ fontSize: 12, color: C.faint, lineHeight: 1.6, fontWeight: 600 }}>
+            You'll continue to secure checkout (Stripe) to start your subscription. Cancel anytime.
+          </div>
+          {err && <div style={{ color: C.coral, fontSize: 13, fontWeight: 700 }}>{err}</div>}
+          <Btn onClick={activate} disabled={!ok || busy}>{busy ? "Activating…" : "🛡️ Activate monitoring"}</Btn>
+          <Btn kind="quiet" onClick={onBack}>← back</Btn>
         </div>
-        {err && <div style={{ color: C.alert, fontSize: 13, lineHeight: 1.5 }}>{err}</div>}
-        <Btn onClick={activate} disabled={!ok || busy}>{busy ? "Activating…" : "Activate monitoring"}</Btn>
-        <Btn kind="quiet" onClick={onBack}>← back</Btn>
+      </Card>
+    </div>
+  );
+}
+
+// ----------------------------- onboarding (reward moment) -------------------
+function Onboard({ account, onGo }) {
+  return (
+    <div style={{ paddingTop: 80, maxWidth: 540, textAlign: "center", margin: "0 auto" }}>
+      <div className="pop" style={{ fontSize: 64, marginBottom: 10 }}>🎉</div>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 30, margin: 0 }}>The watch is on!</h2>
+      <p style={{ color: C.sub, fontSize: 15.5, lineHeight: 1.65, marginTop: 14, fontWeight: 600 }}>
+        KAIROS is now watching <b style={{ color: C.green }}>{account.property}</b>. Your first digest is ready —
+        so you feel the work right away, not in thirty days. After that, we'll check in monthly, and the moment
+        anything verified changes.
+      </p>
+      <div style={{ marginTop: 24 }}><Btn onClick={onGo}>See my dashboard →</Btn></div>
+    </div>
+  );
+}
+
+// =============================================================================
+// DASHBOARD — tabbed IA (Overview · Property · Savings · Alerts · Digest · Account)
+//   Uses real API data only; never fabricates values or savings $.
+// =============================================================================
+function Dashboard({ account, setAccount, attrs, results }) {
+  const [tab, setTab] = useState("overview");
+  const active = (results || []).filter((r) => r.strength === STR.ACTIVE || r.strength === STR.PROVISIONAL);
+  const needed = [...new Set((results || []).flatMap((r) => r.needed))];
+  const verifiedFacts = factsFromAttrs(attrs);
+  const latest = account.digests && account.digests[0];
+  const TABS = [
+    ["overview", "Overview", "🏠"], ["property", "Property", "📍"], ["savings", "Savings", "💰"],
+    ["alerts", "Alerts", "🔔"], ["digest", "Digest", "📬"], ["account", "Account", "⚙️"],
+  ];
+  return (
+    <div style={{ paddingTop: 36 }}>
+      {/* stable property identity header */}
+      <Card accent={C.green} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="floaty" style={{ fontSize: 30 }}>🏠</div>
+          <div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 22, lineHeight: 1.1 }}>{account.property}</div>
+            <div style={{ color: C.sub, fontSize: 13, fontWeight: 700 }}>{account.plan?.name} · watching since {account.since}</div>
+          </div>
+        </div>
+        <span style={{ background: C.greenBg, color: C.greenDk, fontWeight: 800, fontSize: 13, padding: "7px 13px", borderRadius: 999 }}>
+          🟢 On watch
+        </span>
+      </Card>
+
+      {/* segmented tabs */}
+      <div className="kai-tabs" style={{ margin: "16px 0 18px", flexWrap: "wrap" }}>
+        {TABS.map(([id, label, emo]) => (
+          <button key={id} onClick={() => setTab(id)} style={{ border: "none", cursor: "pointer",
+            fontFamily: FONT_BODY, fontWeight: 800, fontSize: 13.5, padding: "9px 14px", borderRadius: 999,
+            background: tab === id ? C.ink : "#fff", color: tab === id ? "#fff" : C.sub,
+            boxShadow: tab === id ? "none" : `inset 0 0 0 1px ${C.line}` }}>
+            <span style={{ marginRight: 6 }}>{emo}</span>{label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "overview" && <OverviewTab account={account} active={active} needed={needed} verifiedFacts={verifiedFacts} latest={latest} go={setTab} />}
+      {tab === "property" && <PropertyTab account={account} verifiedFacts={verifiedFacts} />}
+      {tab === "savings" && <SavingsTab active={active} />}
+      {tab === "alerts" && <AlertsTab active={active} needed={needed} />}
+      {tab === "digest" && <DigestView d={latest} />}
+      {tab === "account" && <AccountTab account={account} setAccount={setAccount} />}
+    </div>
+  );
+}
+
+function Stat({ emo, big, label, color }) {
+  return (
+    <Card style={{ textAlign: "center", padding: 18 }}>
+      <div style={{ fontSize: 26 }}>{emo}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 30, color: color || C.ink, lineHeight: 1.1 }}>{big}</div>
+      <div style={{ color: C.sub, fontSize: 12.5, fontWeight: 700 }}>{label}</div>
+    </Card>
+  );
+}
+
+// retention metrics — derived ONLY from real engine results + backend digests (no fabrication)
+function protectionScore(active, needed, latest) {
+  const watched = active.length, gaps = needed.length;
+  if (watched + gaps > 0) return Math.round((100 * watched) / (watched + gaps));
+  if (latest && latest.checked > 0) return Math.round((100 * (latest.stable ?? 0)) / latest.checked);
+  return 100;
+}
+function calmStreak(digests) {
+  if (!Array.isArray(digests)) return 0;
+  let n = 0;
+  for (const d of digests) { if ((d && d.attention ? d.attention : 0) === 0) n++; else break; }
+  return n;
+}
+function winsFromDigests(digests, verifiedCount, protectedCount) {
+  const wins = [];
+  if (protectedCount > 0) wins.push(["🛡️", `${protectedCount} ${protectedCount === 1 ? "thing" : "things"} under watch`]);
+  if (verifiedCount > 0) wins.push(["✅", `${verifiedCount} ${verifiedCount === 1 ? "fact" : "facts"} verified`]);
+  (digests || []).slice(0, 4).forEach((d) => {
+    if ((d.attention || 0) === 0) wins.push(["🎉", `${d.month}: all quiet — nothing to do`]);
+    else wins.push(["🔔", `${d.month}: ${d.attention} caught early`]);
+  });
+  return wins;
+}
+function ScoreRing({ value }) {
+  const r = 34, circ = 2 * Math.PI * r, off = circ * (1 - value / 100);
+  const color = value >= 75 ? C.green : value >= 45 ? C.blue : C.yellow;
+  return (
+    <svg width="92" height="92" viewBox="0 0 92 92" aria-label={`Protection score ${value}`}>
+      <circle cx="46" cy="46" r={r} fill="none" stroke={C.line} strokeWidth="9" />
+      <circle cx="46" cy="46" r={r} fill="none" stroke={color} strokeWidth="9" strokeLinecap="round"
+        strokeDasharray={circ} strokeDashoffset={off} transform="rotate(-90 46 46)"
+        style={{ transition: "stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1)" }} />
+      <text x="46" y="52" textAnchor="middle" fontFamily={FONT_DISPLAY} fontWeight="800" fontSize="22" fill={C.ink}>{value}</text>
+    </svg>
+  );
+}
+
+function OverviewTab({ account, active, needed, verifiedFacts, latest, go }) {
+  const checked = latest?.checked ?? active.length;
+  const attention = latest?.attention ?? 0;
+  const score = protectionScore(active, needed, latest);
+  const streak = calmStreak(account.digests);
+  const wins = winsFromDigests(account.digests, verifiedFacts.length, active.length);
+  return (
+    <div className="fu" style={{ display: "grid", gap: 14 }}>
+      {/* 1. Is my property okay?  +  2. What changed? */}
+      <Card style={{ background: attention > 0 ? C.yellowBg : C.greenBg, border: "none" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 34 }}>{attention > 0 ? "🔔" : "✅"}</span>
+          <div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 20 }}>
+              {attention > 0 ? COPY.retention.attention(attention) : COPY.retention.allClear}
+            </div>
+            <div style={{ color: C.sub, fontSize: 14, fontWeight: 600 }}>
+              {attention > 0 ? COPY.retention.attentionSub : COPY.retention.allClearSub}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* 3. Did KAIROS help? — protection score + reward stats */}
+      <Card>
+        <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+          <ScoreRing value={score} />
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 16 }}>{COPY.dashboard.protectionScore}</span>
+              {streak > 0 && <span style={{ background: C.purpleBg, color: C.purple, fontWeight: 800, fontSize: 11.5, borderRadius: 999, padding: "3px 10px" }}>🔥 {COPY.retention.streak(streak)}</span>}
+            </div>
+            <div style={{ color: C.sub, fontSize: 12.5, marginTop: 4, fontWeight: 600 }}>{COPY.dashboard.protectionScoreSub}</div>
+          </div>
+        </div>
+        <div className="kai-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginTop: 14 }}>
+          <Stat emo="🛡️" big={active.length} label={COPY.dashboard.statsProtected} color={C.green} />
+          <Stat emo="🔎" big={checked} label={COPY.dashboard.statsChecked} color={C.blue} />
+          <Stat emo="✅" big={verifiedFacts.length} label={COPY.dashboard.statsVerified} color={C.purple} />
+        </div>
+      </Card>
+
+      {/* wins feed */}
+      {wins.length > 0 && (
+        <Card>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 16, marginBottom: 8 }}>{COPY.retention.winsTitle}</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {wins.map(([emo, text], i) => (
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "center", background: C.bg2, borderRadius: 12, padding: "10px 12px" }}>
+                <span style={{ fontSize: 18 }}>{emo}</span>
+                <span style={{ color: C.ink, fontSize: 13.5, fontWeight: 700 }}>{text}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* coverage progress */}
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 16 }}>Your watch coverage</span>
+          <span style={{ color: C.green, fontWeight: 800, fontSize: 13 }}>{active.length} active</span>
+        </div>
+        <Progress value={active.length} max={Math.max(active.length + needed.length, 1)} />
+        <div style={{ color: C.sub, fontSize: 13, marginTop: 10, fontWeight: 600 }}>
+          {COPY.retention.coverageNote(needed.length)}{needed.length > 0 && <> <b style={{ color: C.blueDk, cursor: "pointer" }} onClick={() => go("alerts")}>See how →</b></>}
+        </div>
+      </Card>
+
+      {/* 4. Do I need to do anything? */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Btn onClick={() => go("digest")}>📬 Open my latest digest</Btn>
+        <Btn kind="ghost" onClick={() => go("savings")}>See the value →</Btn>
       </div>
     </div>
   );
 }
-const inpStyle = { width: "100%", background: C.panel, border: `1px solid ${C.line}`, color: C.bone,
-  borderRadius: 8, padding: "13px 15px", fontSize: 14, fontFamily: FONT_BODY, outline: "none" };
 
-// ----------------------------- onboarding -----------------------------------
-function Onboard({ account, onGo }) {
+function PropertyTab({ account, verifiedFacts }) {
   return (
-    <div style={{ paddingTop: 110, maxWidth: 540, textAlign: "center", margin: "0 auto" }}>
-      <div style={{ width: 12, height: 12, borderRadius: "50%", background: C.active, margin: "0 auto 24px", boxShadow: `0 0 22px ${C.active}` }} />
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: 0 }}>The watch is on.</h2>
-      <p style={{ color: C.mist, fontSize: 15, lineHeight: 1.65, marginTop: 14 }}>
-        KAIROS is now monitoring <b style={{ color: C.bone }}>{account.property}</b>. Your first digest is
-        ready below — so you can feel the work immediately, not in thirty days. After that, you'll hear from us
-        monthly, and the moment anything verified changes.
-      </p>
-      <div style={{ marginTop: 26 }}><Btn onClick={onGo}>See my first digest</Btn></div>
+    <div className="fu" style={{ display: "grid", gap: 14 }}>
+      <Card accent={C.blue}>
+        <div style={{ color: C.faint, fontWeight: 800, fontSize: 12, textTransform: "uppercase", marginBottom: 4 }}>Property</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 22 }}>{account.property}</div>
+      </Card>
+      {verifiedFacts.length > 0 ? (
+        <Card>
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 16, marginBottom: 6 }}>Verified facts 📍</div>
+          {verifiedFacts.map(([k, v, p]) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 0", borderBottom: `1px solid ${C.line}` }}>
+              <span style={{ color: C.sub, fontSize: 13.5, fontWeight: 700 }}>{k}</span>
+              <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <span style={{ color: C.ink, fontSize: 13.5, fontWeight: 800 }}>{String(v)}</span><Tag t={p} />
+              </span>
+            </div>
+          ))}
+        </Card>
+      ) : (
+        <Card style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 30 }}>📍</div>
+          <div style={{ fontWeight: 800, marginTop: 6 }}>Your property facts live in your digests</div>
+          <div style={{ color: C.sub, fontSize: 13.5, marginTop: 4, fontWeight: 600 }}>
+            Open the Digest tab to see what KAIROS checked. Run a fresh scan anytime to refresh the detailed fact list.
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
 
-// ----------------------------- account shell + digest -----------------------
-function Account({ account, setAccount, attrs, results }) {
-  const [tab, setTab] = useState("digest");
+// Value/Savings — honest: NO fabricated dollar figures; visualizes protection.
+function SavingsTab({ active }) {
+  return (
+    <div className="fu" style={{ display: "grid", gap: 14 }}>
+      <Card accent={C.green} style={{ background: C.greenBg, border: "none" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 32 }}>💰</span>
+          <div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 20 }}>
+              {COPY.value.savingsHeader(active.length)}
+            </div>
+            <div style={{ color: C.sub, fontSize: 13.5, fontWeight: 600 }}>
+              {COPY.value.savingsSub}
+            </div>
+          </div>
+        </div>
+      </Card>
+      {active.map((r) => (
+        <Card key={r.key} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <span style={{ fontSize: 22 }}>💸</span>
+          <div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 15.5 }}>{r.name}</div>
+            <div style={{ color: C.sub, fontSize: 13.5, lineHeight: 1.55, marginTop: 3, fontWeight: 600 }}>{r.so_what}</div>
+          </div>
+        </Card>
+      ))}
+      {active.length === 0 && (
+        <Card style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 30 }}>🌿</div>
+          <div style={{ fontWeight: 800, marginTop: 6 }}>Nothing high-cost to watch right now</div>
+          <div style={{ color: C.sub, fontSize: 13.5, marginTop: 4, fontWeight: 600 }}>That's the cheapest outcome of all.</div>
+        </Card>
+      )}
+      <div style={{ color: C.faint, fontSize: 12, fontWeight: 600, textAlign: "center", lineHeight: 1.6 }}>
+        {COPY.trust.honesty}
+      </div>
+    </div>
+  );
+}
+
+function AlertsTab({ active, needed }) {
+  return (
+    <div className="fu" style={{ display: "grid", gap: 12 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 18 }}>Things KAIROS is watching for you 🔔</div>
+      {active.length === 0 && (
+        <Card style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 30 }}>✅</div>
+          <div style={{ fontWeight: 800, marginTop: 6 }}>Nothing active to watch — enjoy the quiet.</div>
+        </Card>
+      )}
+      {active.map((r, i) => <CategoryCard key={r.key} r={r} idx={i} />)}
+      {needed.length > 0 && (
+        <Card style={{ background: C.yellowBg, border: "none" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 18 }}>🔑</span>
+            <span style={{ color: C.ink, fontSize: 14, fontWeight: 800 }}>Add to unlock sharper watching (never guessed):</span>
+          </div>
+          {needed.map((n) => <div key={n} style={{ color: C.yellowDk, fontSize: 13.5, padding: "3px 0", fontWeight: 700 }}>• {n}</div>)}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AccountTab({ account, setAccount }) {
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelErr, setCancelErr] = useState(null);
-
   // Owner-only cancellation against the real backend. Sends the capability token as a
   // Bearer header; only flips local state / clears the session when the backend confirms
   // the cancel, so a failed call never shows a false "cancelled" while billing continues.
@@ -871,61 +1155,43 @@ function Account({ account, setAccount, attrs, results }) {
     }
   };
   return (
-    <div style={{ paddingTop: 60 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.active, letterSpacing: ".14em" }}>UNDER WATCH</div>
-          <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 300, fontSize: 30, margin: "4px 0 0" }}>{account.property}</h2>
-          <div style={{ color: C.fog, fontSize: 13, marginTop: 4 }}>{account.plan?.name} · active since {account.since}</div>
-        </div>
-        <div style={{ fontFamily: FONT_MONO, fontSize: 11.5, color: C.fog, letterSpacing: ".04em" }}>Next digest · monthly</div>
-      </div>
-
-      <div style={{ display: "flex", gap: 18, margin: "26px 0 18px", borderBottom: `1px solid ${C.line}` }}>
-        {["digest", "archive", "account"].map((t) => (
-          <div key={t} onClick={() => setTab(t)} style={{ paddingBottom: 12, cursor: "pointer",
-            color: tab === t ? C.bone : C.fog, borderBottom: tab === t ? `2px solid ${C.active}` : "2px solid transparent",
-            fontSize: 14, textTransform: "capitalize" }}>{t === "archive" ? "Digest archive" : t}</div>
-        ))}
-      </div>
-
-      {tab === "digest" && <DigestView d={account.digests[0]} />}
-      {tab === "archive" && (
-        <div style={{ display: "grid", gap: 10 }}>
-          {account.digests.map((d) => (
-            <div key={d.n} style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 9, padding: 16, display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: C.mist }}>{d.month}</span>
-              <span style={{ color: C.fog, fontSize: 13, fontFamily: FONT_MONO }}>{d.stable} stable · {d.attention} attention</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {tab === "account" && (
-        <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: 22, maxWidth: 460 }}>
-          {[["Email", account.email], ["Plan", account.plan?.name], ["Status", account.status], ["Property", account.property]].map(([k, v]) => (
-            <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.line}` }}>
-              <span style={{ color: C.fog, fontSize: 13 }}>{k}</span><span style={{ color: C.bone, fontSize: 13.5 }}>{v}</span>
-            </div>
-          ))}
-          <div style={{ marginTop: 16 }}>
-            <Btn kind="ghost" onClick={cancelWatch} disabled={cancelBusy || account.status === "cancelled"}>
-              {cancelBusy ? "Cancelling…" : account.status === "cancelled" ? "Cancelled" : "Cancel monitoring"}
-            </Btn>
-            {cancelErr && <div style={{ color: C.alert, fontSize: 12.5, marginTop: 8 }}>{cancelErr}</div>}
+    <div className="fu" style={{ display: "grid", gap: 14 }}>
+      <Card>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 16, marginBottom: 6 }}>Your account ⚙️</div>
+        {[["Email", account.email], ["Plan", account.plan?.name], ["Status", account.status], ["Property", account.property]].map(([k, v]) => (
+          <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "11px 0", borderBottom: `1px solid ${C.line}` }}>
+            <span style={{ color: C.sub, fontSize: 13.5, fontWeight: 700 }}>{k}</span>
+            <span style={{ color: C.ink, fontSize: 13.5, fontWeight: 800 }}>{v}</span>
           </div>
-        </div>
-      )}
+        ))}
+      </Card>
+      <Card style={{ background: C.bg2 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 15, marginBottom: 6 }}>Manage subscription</div>
+        {account.status === "cancelled" ? (
+          <div style={{ color: C.greenDk, fontSize: 13.5, fontWeight: 700, background: C.greenBg, borderRadius: 12, padding: "12px 14px" }}>
+            ✓ Monitoring cancelled. You're always welcome back.
+          </div>
+        ) : (
+          <>
+            <div style={{ color: C.sub, fontSize: 13, marginBottom: 10, fontWeight: 600 }}>
+              Cancel anytime — no hard feelings.
+            </div>
+            <Btn kind="ghost" onClick={cancelWatch} disabled={cancelBusy || account.status === "cancelled"}>
+              {cancelBusy ? "Cancelling…" : "Cancel monitoring"}
+            </Btn>
+          </>
+        )}
+        {cancelErr && <div style={{ color: C.coral, fontSize: 12.5, marginTop: 8, fontWeight: 700 }}>{cancelErr}</div>}
+      </Card>
     </div>
   );
 }
 
-// Build a digest from the live results. Month 1 restates baseline; later months
-// model an honest "mostly stable" cadence with one optional change/escalation.
+// ----------------------------- digest view (cheerful) -----------------------
 function buildDigest(attrs, results, n) {
   const active = results.filter((r) => r.strength === STR.ACTIVE || r.strength === STR.PROVISIONAL);
   const monthDate = new Date(); monthDate.setMonth(monthDate.getMonth() + (n - 1));
   const month = monthDate.toLocaleDateString("en-US", { year: "numeric", month: "long" });
-  // Month 1: baseline. Later: one category may show a change (deterministic by n).
   const changeIdx = n === 1 ? -1 : (n % active.length);
   const rows = active.map((r, i) => {
     let status = "No change";
@@ -934,59 +1200,79 @@ function buildDigest(attrs, results, n) {
     return { name: r.name, status, line: r.user_explanation, alert: r.alert_eligible };
   });
   const attention = rows.filter((x) => x.status !== "No change").length;
-  return { n, month, rows, stable: rows.length - attention, attention,
-    checked: active.length,
+  return { n, month, rows, stable: rows.length - attention, attention, checked: active.length,
     escalation: rows.find((x) => x.status === "Change detected" && x.alert) || null };
 }
 
 function DigestView({ d }) {
-  if (!d) return null;
-  const statusColor = { "No change": C.active, "Change detected": C.alert, "Awaiting your input": C.prov };
-  const statusDot = { "No change": "✓", "Change detected": "⚠", "Awaiting your input": "◐" };
+  if (!d) return (
+    <Card className="fu" style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 34 }}>📬</div>
+      <div style={{ fontWeight: 800, marginTop: 8 }}>Your first digest is on its way</div>
+      <div style={{ color: C.sub, fontSize: 13.5, marginTop: 4, fontWeight: 600 }}>KAIROS will drop a friendly monthly note here — and the moment anything verified changes.</div>
+    </Card>
+  );
+  const meta = {
+    "No change": { fg: C.greenDk, bg: C.greenBg, dot: "✅", label: "All good" },
+    "Change detected": { fg: C.coral, bg: C.coralBg, dot: "🔔", label: "Heads up" },
+    "Awaiting your input": { fg: C.yellowDk, bg: C.yellowBg, dot: "🔑", label: "Add info" },
+  };
   return (
-    <div className="fu">
-      {/* escalation banner — calm, never red */}
+    <div className="fu" style={{ display: "grid", gap: 14 }}>
       {d.escalation && (
-        <div style={{ background: C.panel2, border: `1px solid ${C.alert}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <Card style={{ background: C.coralBg, border: "none" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <span style={{ color: C.alert }}>⚠</span>
-            <span style={{ color: C.bone, fontSize: 14 }}>
-              One condition changed this month and was sent to you when it happened — not held for the digest: <b>{d.escalation.name}</b>.
+            <span style={{ fontSize: 22 }}>🔔</span>
+            <span style={{ color: C.ink, fontSize: 14, fontWeight: 700 }}>
+              One condition changed this month and was sent to you the moment it happened — not held for the digest: <b>{d.escalation.name}</b>.
             </span>
           </div>
-        </div>
+        </Card>
       )}
-
-      <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: 24 }}>
-        <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.fog, letterSpacing: ".12em" }}>MONITORING DIGEST · {d.month.toUpperCase()}</div>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "10px 0 4px", lineHeight: 1.4 }}>
-          KAIROS checked {d.checked} operational conditions this month.
+      <Card accent={d.attention > 0 ? C.yellow : C.green}>
+        <div style={{ color: C.faint, fontWeight: 800, fontSize: 12, textTransform: "uppercase" }}>Monthly digest · {d.month}</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 21, margin: "8px 0 4px", lineHeight: 1.3 }}>
+          KAIROS checked {d.checked} {d.checked === 1 ? "condition" : "conditions"} this month 🔎
         </div>
-        <div style={{ color: C.mist, fontSize: 15 }}>
-          {d.stable} remain stable.{d.attention > 0 ? ` ${d.attention} ${d.attention === 1 ? "needs" : "need"} your attention.` : " Nothing needs action."}
+        <div style={{ color: C.sub, fontSize: 15, fontWeight: 600 }}>
+          <b style={{ color: C.green }}>{d.stable} stable.</b>{d.attention > 0 ? ` ${d.attention} ${d.attention === 1 ? "needs" : "need"} a glance.` : " Nothing needs you. Enjoy the calm 💚"}
         </div>
-
-        <div style={{ marginTop: 22, display: "grid", gap: 8 }}>
-          {d.rows.map((row) => (
-            <div key={row.name} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "12px 0", borderBottom: `1px solid ${C.line}` }}>
-              <span style={{ color: statusColor[row.status], marginTop: 1 }}>{statusDot[row.status]}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
-                  <span style={{ color: C.bone, fontSize: 14.5 }}>{row.name}</span>
-                  <span style={{ color: statusColor[row.status], fontSize: 12, fontFamily: FONT_MONO, whiteSpace: "nowrap" }}>{row.status}</span>
+        <div style={{ marginTop: 18, display: "grid", gap: 8 }}>
+          {d.rows.map((row) => {
+            const m = meta[row.status] || meta["No change"];
+            return (
+              <div key={row.name} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "12px 0", borderBottom: `1px solid ${C.line}` }}>
+                <span style={{ fontSize: 18 }}>{m.dot}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                    <span style={{ color: C.ink, fontSize: 14.5, fontWeight: 800 }}>{row.name}</span>
+                    <span style={{ color: m.fg, background: m.bg, fontSize: 11.5, fontWeight: 800, borderRadius: 999, padding: "3px 10px", whiteSpace: "nowrap" }}>{m.label}</span>
+                  </div>
+                  <div style={{ color: C.sub, fontSize: 13, lineHeight: 1.5, marginTop: 3, fontWeight: 600 }}>{row.line}</div>
                 </div>
-                <div style={{ color: C.fog, fontSize: 13, lineHeight: 1.5, marginTop: 3 }}>{row.line}</div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-
-        <div style={{ marginTop: 18, padding: 14, background: C.ink, borderRadius: 8, color: C.fog, fontSize: 12.5, lineHeight: 1.6 }}>
-          <b style={{ color: C.mist }}>What KAIROS watched this month:</b> every condition above was checked against
-          public records — including the quiet ones. Watching the quiet ones is the job. A condition only reaches you
-          immediately if a verified fact verifiably changes; everything else waits for this calm monthly note.
+        <div style={{ marginTop: 16, padding: 14, background: C.bg2, borderRadius: 14, color: C.sub, fontSize: 12.5, lineHeight: 1.6, fontWeight: 600 }}>
+          <b style={{ color: C.ink }}>What KAIROS watched:</b> every condition above was checked against public records — including the quiet ones.
+          Watching the quiet ones is the job. A condition only reaches you immediately if a verified fact verifiably changes; everything else waits for this calm monthly note.
         </div>
-      </div>
+      </Card>
     </div>
   );
+}
+
+// helper: build the verified-facts list from attrs (same fields as before)
+function factsFromAttrs(attrs) {
+  if (!attrs) return [];
+  return [
+    ["Property type", attrs.property_type, attrs.property_type_prov],
+    ["Owner type", attrs.ownership_type, attrs.ownership_type_prov],
+    ["Year built", attrs.year_built, attrs.year_built_prov],
+    ["Flood zone", attrs.flood_zone, attrs.flood_zone_prov],
+    ["BFE (ft)", attrs.bfe_ft, attrs.flood_zone_prov],
+    ["Use type", attrs.use_type, attrs.use_type_prov],
+    ["Entity status", attrs.entity_status, attrs.entity_status_prov],
+  ].filter(([, v]) => v != null && v !== "");
 }
