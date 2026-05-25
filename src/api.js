@@ -70,8 +70,8 @@ export const api = {
 
   createUser: (email) => call("/users", { method: "POST", body: { email } }),
 
-  createSubscription: ({ scan_id, plan_id, email }) =>
-    call("/subscriptions", { method: "POST", body: { scan_id, plan_id, email } }),
+  createSubscription: ({ email, scan_id, plan }) =>
+    call("/subscriptions", { method: "POST", body: { user_email: email, scan_id, plan } }),
 
   confirmBilling: (payload) =>
     call("/billing/confirm", { method: "POST", body: payload }),
