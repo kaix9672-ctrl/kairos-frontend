@@ -268,12 +268,14 @@ export default function App() {
               email: pending.email, plan: pending.plan, status: "active",
               property: pending.property, since: today(),
               subscriptionId: res.data.subscription_id,
+              accessToken: res.data.access_token || null,
               digests: res.data.first_digest ? [res.data.first_digest] : [],
             };
             try {
               localStorage.setItem("kairos_session", JSON.stringify({
                 subscriptionId: acc.subscriptionId, email: acc.email,
-                property: acc.property, plan: acc.plan, since: acc.since }));
+                property: acc.property, plan: acc.plan, since: acc.since,
+                accessToken: acc.accessToken }));
               localStorage.removeItem("kairos_pending");
             } catch { /* ignore */ }
             setAccount(acc); setRoute("account");
@@ -298,7 +300,8 @@ export default function App() {
           setAccount({
             email: saved.email, plan: saved.plan, status: "active",
             property: saved.property, since: saved.since || today(),
-            subscriptionId: saved.subscriptionId, digests: res.data.digests,
+            subscriptionId: saved.subscriptionId, accessToken: saved.accessToken || null,
+            digests: res.data.digests,
           });
           setRoute("account");
         } else {
@@ -844,6 +847,25 @@ function Onboard({ account, onGo }) {
 // ----------------------------- account shell + digest -----------------------
 function Account({ account, setAccount, attrs, results }) {
   const [tab, setTab] = useState("digest");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelErr, setCancelErr] = useState(null);
+
+  // Owner-only cancellation against the real backend. Sends the capability token as a
+  // Bearer header; only flips local state / clears the session when the backend confirms
+  // the cancel, so a failed call never shows a false "cancelled" while billing continues.
+  const cancelWatch = async () => {
+    setCancelErr(null);
+    if (!window.confirm("Cancel monitoring for this property? This ends your subscription.")) return;
+    setCancelBusy(true);
+    const res = await api.cancelSubscription(account.subscriptionId, account.accessToken);
+    setCancelBusy(false);
+    if (res.ok) {
+      try { localStorage.removeItem("kairos_session"); } catch { /* ignore */ }
+      setAccount({ ...account, status: "cancelled" });
+    } else {
+      setCancelErr(res.error || "We couldn't cancel right now. Please try again or contact support.");
+    }
+  };
   return (
     <div style={{ paddingTop: 60 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -881,7 +903,12 @@ function Account({ account, setAccount, attrs, results }) {
               <span style={{ color: C.fog, fontSize: 13 }}>{k}</span><span style={{ color: C.bone, fontSize: 13.5 }}>{v}</span>
             </div>
           ))}
-          <div style={{ marginTop: 16 }}><Btn kind="ghost" onClick={() => { try { localStorage.removeItem("kairos_session"); } catch { /* ignore */ } setAccount({ ...account, status: "cancelled" }); }}>Cancel anytime</Btn></div>
+          <div style={{ marginTop: 16 }}>
+            <Btn kind="ghost" onClick={cancelWatch} disabled={cancelBusy || account.status === "cancelled"}>
+              {cancelBusy ? "Cancelling…" : account.status === "cancelled" ? "Cancelled" : "Cancel monitoring"}
+            </Btn>
+            {cancelErr && <div style={{ color: C.alert, fontSize: 12.5, marginTop: 8 }}>{cancelErr}</div>}
+          </div>
         </div>
       )}
     </div>

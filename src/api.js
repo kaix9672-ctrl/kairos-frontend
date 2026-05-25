@@ -16,13 +16,16 @@ export const API_BASE =
 // Render free tier can cold-start ~50s; allow generous headroom on the first hit.
 const DEFAULT_TIMEOUT_MS = 65000;
 
-async function call(path, { method = "GET", body, timeout = DEFAULT_TIMEOUT_MS } = {}) {
+async function call(path, { method = "GET", body, headers, timeout = DEFAULT_TIMEOUT_MS } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: body ? { "Content-Type": "application/json" } : undefined,
+      headers: {
+        ...(body ? { "Content-Type": "application/json" } : {}),
+        ...(headers || {}),
+      },
       body: body ? JSON.stringify(body) : undefined,
       signal: ctrl.signal,
     });
@@ -75,6 +78,14 @@ export const api = {
 
   confirmBilling: (payload) =>
     call("/billing/confirm", { method: "POST", body: payload }),
+
+  // Owner-only cancellation. Presents the capability token issued at create/confirm
+  // as a Bearer header; the backend (auth.require_access) verifies it binds to this sub.
+  cancelSubscription: (subId, accessToken) =>
+    call(`/subscriptions/${subId}/cancel`, {
+      method: "POST",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    }),
 
   getDigests: (subId) => call(`/digests/${subId}`),
   nextDigest: (subId) => call(`/digests/${subId}/next`, { method: "POST" }),
