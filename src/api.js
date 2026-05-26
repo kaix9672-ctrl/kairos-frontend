@@ -60,7 +60,7 @@ export const api = {
   health: () => call("/health", { timeout: 8000 }),
 
   // Source of truth for a scan. Returns {mode, scan_id, results, recommendation,
-  // needed, source_note, attributes, ...}. This WRITES to Supabase server-side.
+  // needed, source_note, attributes, ...}. This WRITES server-side (backend SQLite at KAIROS_DB).
   scanFromValues: (values) =>
     call("/scan/from-values", { method: "POST", body: { values } }),
 
