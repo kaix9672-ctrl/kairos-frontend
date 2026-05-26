@@ -1,10 +1,12 @@
+import { Mascot } from "./brand/mascots/mascots.jsx";
+import "./brand/mascots/mascots.css";
 import React, { useState, useEffect, useMemo } from "react";
 import api from "./api";
 import { COPY } from "./copy";
 
-// Support contact — env-driven so production sets the real address (VITE_SUPPORT_EMAIL,
-// falls back to a placeholder so a missing env never leaks a wrong inbox).
-const SUPPORT_EMAIL = (import.meta.env && import.meta.env.VITE_SUPPORT_EMAIL) || "support@kairos.example";
+// Support contact — env-driven (VITE_SUPPORT_EMAIL) so prod can override without a code
+// change; falls back to the project's real contact address (also used in ManualNeeded/copy).
+const SUPPORT_EMAIL = (import.meta.env && import.meta.env.VITE_SUPPORT_EMAIL) || "kai@kairosaiagent.com";
 
 // =============================================================================
 // KAIROS — v1 SELF-SERVE PRODUCT (single-file React app) — PLAYGROUND REDESIGN
@@ -230,7 +232,7 @@ const Btn = ({ children, onClick, kind = "primary", disabled, style }) => {
   const k = kinds[kind] || kinds.primary;
   const chunky = kind === "primary" || kind === "blue";
   return (
-    <button onClick={disabled ? undefined : onClick} disabled={disabled}
+    <button className="kai-btn" onClick={disabled ? undefined : onClick} disabled={disabled}
       style={{ fontFamily: FONT_BODY, fontWeight: 800, fontSize: 15, cursor: disabled ? "not-allowed" : "pointer",
         borderRadius: 14, padding: kind === "quiet" ? "8px 6px" : "13px 22px", border: "none",
         background: k.bg, color: k.color, letterSpacing: ".01em",
@@ -269,7 +271,7 @@ const StatusPill = ({ s }) => {
     background: m.bg, borderRadius: 999, padding: "4px 11px", whiteSpace: "nowrap" }}>{m.label}</span>;
 };
 const Card = ({ children, style, accent }) => (
-  <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 20, boxShadow: SHADOW_SM,
+  <div className="kai-card" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 20, boxShadow: SHADOW_SM,
     padding: 20, position: "relative", overflow: "hidden", ...style }}>
     {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 5, background: accent }} />}
     {children}
@@ -403,7 +405,10 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:wght@400;600;700;800;900&display=swap');
         * { box-sizing: border-box; }
-        body { margin: 0; }
+        html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+        body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+        img { max-width: 100%; }
+        h1, h2 { letter-spacing: -0.015em; }
         @keyframes fadeUp { from { opacity:0; transform: translateY(14px);} to {opacity:1; transform:none;} }
         @keyframes pop { 0%{transform:scale(.8);opacity:0} 60%{transform:scale(1.06)} 100%{transform:scale(1);opacity:1} }
         @keyframes floaty { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
@@ -413,20 +418,30 @@ export default function App() {
         .floaty { animation: floaty 4s ease-in-out infinite; }
         .kai-hero { font-size: clamp(30px, 7vw, 46px); }
         .kai-tabs { display: flex; gap: 8px; }
+        .kai-card { transition: transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .2s ease; }
+        .kai-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(28,68,128,.12) !important; }
+        .kai-btn:focus-visible { outline: 3px solid rgba(76,141,246,.45); outline-offset: 2px; }
+        @media (hover: none) { .kai-card:hover { transform: none; box-shadow: 0 3px 10px rgba(28,68,128,.08) !important; } }
         @media (max-width: 640px) {
-          .kai-section { padding-top: 36px !important; }
+          .kai-app { padding-left: 16px !important; padding-right: 16px !important; }
+          .kai-card { padding: 16px !important; }
           .kai-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
           .kai-tabs button { flex: 0 0 auto; }
           .kai-grid-3 { grid-template-columns: 1fr 1fr !important; }
+          .kai-hero { font-size: clamp(26px, 8.5vw, 38px); }
+        }
+        @media (max-width: 420px) {
+          .kai-grid-3 { grid-template-columns: 1fr !important; }
         }
         @media (prefers-reduced-motion: reduce) {
           .fu, .pop, .floaty { animation: none !important; }
+          html { scroll-behavior: auto; }
         }
       `}</style>
       <Blobs />
       <div style={{ position: "relative", zIndex: 1 }}>
         <Header route={route} account={account} go={setRoute} />
-        <div style={{ maxWidth: 940, margin: "0 auto", padding: "0 20px 110px" }}>
+        <div className="kai-app" style={{ maxWidth: 940, margin: "0 auto", padding: "0 20px 110px" }}>
           {route === "landing" && <Landing onStart={() => setRoute("privacy")} onSample={() => runPipeline(UNIT_1001)} />}
           {route === "privacy" && <AddressEntry onRun={runPipeline} onRunLive={runLive} showValues={showValues} setShowValues={setShowValues} onLowFit={() => runPipeline(LOW_FIT)} />}
           {route === "loading" && <Loading />}
@@ -463,7 +478,7 @@ function Header({ route, account, go }) {
           <span style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 800, color: C.ink }}>KAIROS</span>
         </div>
         <div style={{ fontFamily: FONT_BODY, fontSize: 13, fontWeight: 700, color: C.sub }}>
-          {account ? `${account.email}` : "your property's friendly watcher"}
+          {account?.email || "your property's friendly watcher"}
         </div>
       </div>
     </div>
@@ -483,15 +498,18 @@ function Footer() {
 // ----------------------------- landing --------------------------------------
 function Landing({ onStart, onSample }) {
   return (
-    <div style={{ paddingTop: 64 }}>
-      <div className="fu" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.greenBg, color: C.greenDk,
-        fontWeight: 800, fontSize: 13, padding: "7px 14px", borderRadius: 999, marginBottom: 22 }}>
-        🛡️ {COPY.hero.badge}
+    <div style={{ paddingTop: 28 }}>
+      <div className="fu" style={{ display: "inline-flex", alignItems: "center", gap: 7, background: C.greenBg, color: C.greenDk,
+        fontWeight: 800, fontSize: 13, padding: "7px 14px", borderRadius: 999, marginBottom: 16 }}>
+        <Mascot type="monitoring" size={18} motion={false} /> {COPY.hero.badge}
       </div>
-      <h1 className="fu kai-hero" style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: "clamp(30px,7vw,46px)", lineHeight: 1.1, margin: 0,
-        color: C.ink, maxWidth: 780, animationDelay: ".05s" }}>
-        You already have enough notifications. <span style={{ color: C.green }}>KAIROS does the watching for you.</span>
-      </h1>
+      <div className="fu kai-hero" style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", animationDelay: ".05s" }}>
+        <Mascot type="monitoring" size={84} title="KAIROS watches your property" />
+        <h1 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: "clamp(30px,7vw,46px)", lineHeight: 1.1, margin: 0,
+          color: C.ink, maxWidth: 640 }}>
+          You already have enough notifications. <span style={{ color: C.green }}>KAIROS does the watching for you.</span>
+        </h1>
+      </div>
       <p className="fu" style={{ fontSize: 18, color: C.sub, maxWidth: 640, lineHeight: 1.6, marginTop: 18, fontWeight: 600, animationDelay: ".12s" }}>
         {COPY.hero.sub}
       </p>
@@ -500,10 +518,12 @@ function Landing({ onStart, onSample }) {
         <Btn kind="ghost" onClick={onSample}>{COPY.hero.ctaSecondary}</Btn>
       </div>
 
-      <div className="kai-grid-3" style={{ marginTop: 56, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 16 }}>
-        {COPY.philosophy.map(([emo, h, b], i) => (
-          <Card key={h} className="fu" style={{ animationDelay: `${.24 + i * .07}s` }} accent={[C.blue, C.green, C.yellow][i]}>
-            <div style={{ fontSize: 30, marginBottom: 8 }}>{emo}</div>
+      <div className="kai-grid-3" style={{ marginTop: 44, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 16 }}>
+        {COPY.philosophy.map(([, h, b], i) => (
+          <Card key={h} className="fu" style={{ animationDelay: `${.24 + i * .07}s`, textAlign: "center" }} accent={[C.blue, C.green, C.yellow][i]}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+              <Mascot type={["scan", "monitoring", "reports"][i] || "monitoring"} size={52} title={h} />
+            </div>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 18, marginBottom: 6 }}>{h}</div>
             <div style={{ color: C.sub, fontSize: 14, lineHeight: 1.55, fontWeight: 600 }}>{b}</div>
           </Card>
@@ -512,7 +532,7 @@ function Landing({ onStart, onSample }) {
 
       {/* founder voice — preserved verbatim from the copy system */}
       <Card className="fu" style={{ marginTop: 22, background: `linear-gradient(135deg, ${C.purpleBg}, ${C.blueBg})`, border: "none" }} accent={C.purple}>
-        <div style={{ fontSize: 26, marginBottom: 8 }}>💬</div>
+        <div style={{ marginBottom: 10 }}><Mascot type="advisor" size={48} title="From the founder" /></div>
         <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 18, lineHeight: 1.5, color: C.ink }}>
           “{COPY.founder.quote}”
         </div>
@@ -533,10 +553,11 @@ function AddressEntry({ onRun, onRunLive, showValues, setShowValues, onLowFit })
   return (
     <div style={{ paddingTop: 48, maxWidth: 640 }}>
       <Btn kind="quiet" onClick={() => onRun(UNIT_1001)} style={{ display: "none" }} />
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 34, margin: 0 }}>Let's check your property 🏠</h2>
+      <div style={{ marginBottom: 10 }}><Mascot type="scan" size={64} title="Property scan" /></div>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 34, margin: 0 }}>Let's check your property</h2>
       <Card style={{ marginTop: 18, background: C.greenBg, border: "none" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-          <span style={{ fontSize: 20 }}>🔒</span>
+          <Mascot type="legal" size={32} motion={false} />
           <div style={{ color: C.ink, fontSize: 14, lineHeight: 1.6, fontWeight: 600 }}>
             {COPY.trust.promise}
           </div>
@@ -616,8 +637,11 @@ function FromValues({ onRun }) {
   const chk = (k) => <input type="checkbox" checked={f[k]} onChange={(e) => set(k, e.target.checked)} style={{ accentColor: C.green, width: 18, height: 18 }} />;
   return (
     <Card style={{ marginTop: 14 }}>
-      <div style={{ color: C.sub, fontSize: 12.5, marginBottom: 8, fontWeight: 600 }}>
-        Enter only what you've verified. Anything left blank stays <Tag t="NEEDED" />. Nothing is invented.
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <Mascot type="legal" size={40} motion={false} title="Verified figures" />
+        <div style={{ color: C.sub, fontSize: 12.5, fontWeight: 600 }}>
+          Enter only what you've verified. Anything left blank stays <Tag t="NEEDED" />. Nothing is invented.
+        </div>
       </div>
       {field("Property nickname", inp("nickname", "Unit 1001"))}
       {field("Property type", sel("property_type", ["condo_hotel", "condo", "multifamily", "single_family", "commercial", "warehouse"]))}
@@ -644,7 +668,9 @@ function Loading() {
   useEffect(() => { const t = setInterval(() => setI((x) => Math.min(x + 1, steps.length - 1)), 560); return () => clearInterval(t); }, []);
   return (
     <div style={{ paddingTop: 90, maxWidth: 520, margin: "0 auto", textAlign: "center" }}>
-      <div className="floaty" style={{ fontSize: 54, marginBottom: 18 }}>🔎</div>
+      <div className="floaty" style={{ marginBottom: 18, display: "flex", justifyContent: "center" }}>
+        <Mascot type="scan" size={76} title="Scanning your property" />
+      </div>
       <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 24, marginBottom: 20 }}>Scanning your property…</div>
       <Progress value={i + 1} max={steps.length} />
       <div style={{ marginTop: 24, display: "grid", gap: 10, textAlign: "left" }}>
@@ -662,7 +688,7 @@ function Loading() {
 function ManualNeeded({ onBack }) {
   return (
     <div style={{ paddingTop: 64, maxWidth: 560 }}>
-      <div style={{ fontSize: 40, marginBottom: 8 }}>🤝</div>
+      <div style={{ marginBottom: 8 }}><Mascot type="advisor" size={56} title="Hand-checked by a person" /></div>
       <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 28, margin: "0 0 10px" }}>This one needs a friendly hand-check</h2>
       <p style={{ color: C.sub, fontSize: 15, lineHeight: 1.6, fontWeight: 600 }}>
         We couldn't reach this property's public records automatically right now — and KAIROS never makes up values.
@@ -676,7 +702,7 @@ function ManualNeeded({ onBack }) {
 function ErrorScreen({ message, onRetry, onBack }) {
   return (
     <div style={{ paddingTop: 64, maxWidth: 540 }}>
-      <div style={{ fontSize: 40, marginBottom: 8 }}>🌱</div>
+      <div style={{ marginBottom: 8 }}><Mascot type="alerts" size={56} title="Something needs attention" /></div>
       <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 28, margin: "0 0 10px" }}>Let's try that again</h2>
       <p style={{ color: C.sub, fontSize: 15, lineHeight: 1.6, fontWeight: 600 }}>{message || "Something interrupted the scan."}</p>
       <div style={{ display: "flex", gap: 12, marginTop: 20, flexWrap: "wrap" }}>
@@ -697,8 +723,11 @@ function Scan({ attrs, results, reco, onSubscribe, onBack }) {
     <div style={{ paddingTop: 44 }}>
       <Btn kind="quiet" onClick={onBack} style={{ marginBottom: 6 }}>← back</Btn>
       <div className="pop" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.greenBg, color: C.greenDk,
-        fontWeight: 800, fontSize: 13, padding: "6px 13px", borderRadius: 999 }}>🎉 Scan complete!</div>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 32, margin: "10px 0 4px" }}>{attrs.nickname}</h2>
+        fontWeight: 800, fontSize: 13, padding: "6px 13px", borderRadius: 999 }}><Mascot type="scan" size={16} motion={false} style={{ marginRight: 4 }} /> Scan complete!</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "12px 0 4px" }}>
+        <Mascot type="scan" size={48} title="Scan complete" />
+        <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 32, margin: 0 }}>{attrs.nickname}</h2>
+      </div>
       <div style={{ color: C.sub, fontSize: 16, fontWeight: 600 }}>
         {shown.length === 0
           ? "Good news — we found little that needs ongoing watching here."
@@ -712,7 +741,7 @@ function Scan({ attrs, results, reco, onSubscribe, onBack }) {
       {needed.length > 0 && (
         <Card style={{ marginTop: 16, background: C.yellowBg, border: "none" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 18 }}>🔑</span>
+            <Mascot type="legal" size={28} motion={false} />
             <span style={{ color: C.ink, fontSize: 14, fontWeight: 800 }}>Add these to sharpen your watch (we never guess them):</span>
           </div>
           {needed.map((n) => <div key={n} style={{ color: C.yellowDk, fontSize: 13.5, padding: "3px 0", fontWeight: 700 }}>• {n}</div>)}
@@ -720,7 +749,10 @@ function Scan({ attrs, results, reco, onSubscribe, onBack }) {
       )}
 
       <Card style={{ marginTop: 20, background: `linear-gradient(135deg, ${C.blueBg}, ${C.greenBg})`, border: "none" }} accent={C.green}>
-        <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 20, marginBottom: 6 }}>What we'd suggest 💡</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <Mascot type="advisor" size={40} motion={false} />
+          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 20 }}>What we'd suggest</div>
+        </div>
         <div style={{ color: C.ink, fontSize: 14.5, lineHeight: 1.6, marginBottom: 16, fontWeight: 600 }}>{reco?.line}</div>
         {reco?.tier === "none" ? (
           <Btn kind="ghost" onClick={onBack}>Keep my free scan</Btn>
@@ -734,13 +766,20 @@ function Scan({ attrs, results, reco, onSubscribe, onBack }) {
     </div>
   );
 }
+const CAT_MASCOT = (r) => {
+  const t = (((r && r.key) || "") + " " + ((r && r.name) || "")).toLowerCase();
+  if (/flood|coastal|climate|water/.test(t)) return "flood";
+  if (/own|deed|title|transaction|entity|registration/.test(t)) return "ownership";
+  if (/legal|complian|disclos|assessment|appeal|recert|inspection|reserve/.test(t)) return "legal";
+  return "monitoring";
+};
 function CategoryCard({ r, idx }) {
   const [open, setOpen] = useState(false);
   const accent = r.strength === STR.ACTIVE ? C.green : C.blue;
   return (
     <Card className="fu" style={{ animationDelay: `${(idx || 0) * .05}s`, cursor: "pointer", padding: 18 }} accent={accent} >
       <div onClick={() => setOpen((o) => !o)} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ fontSize: 22 }}>{r.strength === STR.ACTIVE ? "🛡️" : "👀"}</span>
+        <Mascot type={CAT_MASCOT(r)} size={44} title={r.name} />
         <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 17, flex: 1 }}>{r.name}</span>
         <StatusPill s={r.strength} />
         <span style={{ color: C.faint, fontWeight: 800 }}>{open ? "−" : "+"}</span>
@@ -768,7 +807,10 @@ function Subscribe({ reco, onChoose, onSkip }) {
   const suggested = "starter";
   return (
     <div style={{ paddingTop: 48 }}>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 32, margin: 0 }}>Keep the watch running 🛡️</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Mascot type="monitoring" size={44} title="Keep the watch running" />
+        <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 32, margin: 0 }}>Keep the watch running</h2>
+      </div>
       <p style={{ color: C.sub, fontSize: 15.5, maxWidth: 580, lineHeight: 1.6, fontWeight: 600 }}>
         Most months, everything stays calm — and we'll tell you so. You're really paying for the one month it doesn't. Cancel anytime, no hard feelings.
       </p>
@@ -817,15 +859,31 @@ function Pay({ plan, scanId, propertyName, onActivated, onBack }) {
       window.location.href = checkout.url;
       return;
     }
-    // No real Stripe session means the backend is in mock mode (Stripe keys not
-    // loaded). We do NOT silently activate — surface it honestly.
+    // Local / mock mode (no Stripe keys): there is no hosted page to redirect to, so
+    // settle the mock checkout server-side via /billing/confirm — the backend's OWN mock
+    // path (no card, no real Stripe) — and continue into the dashboard so the full flow
+    // is usable locally. Real Stripe still uses the redirect branch above.
+    const conf = await api.confirmBilling({
+      session_id: checkout && checkout.session_id, user_email: email,
+      scan_id: scanId, plan: plan.id });
     setBusy(false);
-    setErr(`Live billing isn't enabled yet. Please try again shortly, or contact ${SUPPORT_EMAIL}.`);
+    if (!conf.ok || !conf.data) {
+      setErr(conf.error || `Could not activate locally. Please try again, or contact ${SUPPORT_EMAIL}.`);
+      return;
+    }
+    onActivated({
+      email, plan, status: "active", property: propertyName, since: today(),
+      subscriptionId: sub.data.subscription_id, accessToken: sub.data.access_token || null,
+      digests: conf.data.first_digest ? [conf.data.first_digest] : [],
+    });
   };
 
   return (
     <div style={{ paddingTop: 56, maxWidth: 460 }}>
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 28, margin: 0 }}>Start your watch 🚀</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Mascot type="monitoring" size={44} title="Start your watch" />
+        <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 28, margin: 0 }}>Start your watch</h2>
+      </div>
       <div style={{ color: C.sub, fontSize: 14.5, marginTop: 6, fontWeight: 700 }}>
         {plan?.name} · {plan?.price ? `$${plan.price}/mo` : "custom"} · cancel anytime
       </div>
@@ -850,7 +908,7 @@ function Pay({ plan, scanId, propertyName, onActivated, onBack }) {
 function Onboard({ account, onGo }) {
   return (
     <div style={{ paddingTop: 80, maxWidth: 540, textAlign: "center", margin: "0 auto" }}>
-      <div className="pop" style={{ fontSize: 64, marginBottom: 10 }}>🎉</div>
+      <div className="pop" style={{ marginBottom: 10, display: "flex", justifyContent: "center" }}><Mascot type="monitoring" size={84} title="The watch is on" /></div>
       <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 30, margin: 0 }}>The watch is on!</h2>
       <p style={{ color: C.sub, fontSize: 15.5, lineHeight: 1.65, marginTop: 14, fontWeight: 600 }}>
         KAIROS is now watching <b style={{ color: C.green }}>{account.property}</b>. Your first digest is ready —
@@ -866,6 +924,7 @@ function Onboard({ account, onGo }) {
 // DASHBOARD — tabbed IA (Overview · Property · Savings · Alerts · Digest · Account)
 //   Uses real API data only; never fabricates values or savings $.
 // =============================================================================
+const TAB_MASCOT = { overview: "monitoring", property: "scan", savings: "reports", alerts: "alerts", digest: "reports" };
 function Dashboard({ account, setAccount, attrs, results }) {
   const [tab, setTab] = useState("overview");
   const active = (results || []).filter((r) => r.strength === STR.ACTIVE || r.strength === STR.PROVISIONAL);
@@ -881,7 +940,7 @@ function Dashboard({ account, setAccount, attrs, results }) {
       {/* stable property identity header */}
       <Card accent={C.green} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div className="floaty" style={{ fontSize: 30 }}>🏠</div>
+          <Mascot type="monitoring" size={48} />
           <div>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 22, lineHeight: 1.1 }}>{account.property}</div>
             <div style={{ color: C.sub, fontSize: 13, fontWeight: 700 }}>{account.plan?.name} · watching since {account.since}</div>
@@ -899,7 +958,9 @@ function Dashboard({ account, setAccount, attrs, results }) {
             fontFamily: FONT_BODY, fontWeight: 800, fontSize: 13.5, padding: "9px 14px", borderRadius: 999,
             background: tab === id ? C.ink : "#fff", color: tab === id ? "#fff" : C.sub,
             boxShadow: tab === id ? "none" : `inset 0 0 0 1px ${C.line}` }}>
-            <span style={{ marginRight: 6 }}>{emo}</span>{label}
+            {TAB_MASCOT[id]
+              ? <span style={{ display: "inline-flex", marginRight: 6, verticalAlign: "middle" }}><Mascot type={TAB_MASCOT[id]} size={22} motion={false} /></span>
+              : <span style={{ marginRight: 6 }}>{emo}</span>}{label}
           </button>
         ))}
       </div>
@@ -914,10 +975,12 @@ function Dashboard({ account, setAccount, attrs, results }) {
   );
 }
 
-function Stat({ emo, big, label, color }) {
+function Stat({ emo, mascot, big, label, color }) {
   return (
     <Card style={{ textAlign: "center", padding: 18 }}>
-      <div style={{ fontSize: 26 }}>{emo}</div>
+      <div style={{ display: "flex", justifyContent: "center", minHeight: 32, marginBottom: 2 }}>
+        {mascot ? <Mascot type={mascot} size={32} motion={false} /> : <span style={{ fontSize: 26 }}>{emo}</span>}
+      </div>
       <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 30, color: color || C.ink, lineHeight: 1.1 }}>{big}</div>
       <div style={{ color: C.sub, fontSize: 12.5, fontWeight: 700 }}>{label}</div>
     </Card>
@@ -972,7 +1035,7 @@ function OverviewTab({ account, active, needed, verifiedFacts, latest, go }) {
       {/* 1. Is my property okay?  +  2. What changed? */}
       <Card style={{ background: attention > 0 ? C.yellowBg : C.greenBg, border: "none" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 34 }}>{attention > 0 ? "🔔" : "✅"}</span>
+          <Mascot type={attention > 0 ? "alerts" : "monitoring"} size={52} />
           <div>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 20 }}>
               {attention > 0 ? COPY.retention.attention(attention) : COPY.retention.allClear}
@@ -997,9 +1060,9 @@ function OverviewTab({ account, active, needed, verifiedFacts, latest, go }) {
           </div>
         </div>
         <div className="kai-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginTop: 14 }}>
-          <Stat emo="🛡️" big={active.length} label={COPY.dashboard.statsProtected} color={C.green} />
-          <Stat emo="🔎" big={checked} label={COPY.dashboard.statsChecked} color={C.blue} />
-          <Stat emo="✅" big={verifiedFacts.length} label={COPY.dashboard.statsVerified} color={C.purple} />
+          <Stat mascot="monitoring" big={active.length} label={COPY.dashboard.statsProtected} color={C.green} />
+          <Stat mascot="scan" big={checked} label={COPY.dashboard.statsChecked} color={C.blue} />
+          <Stat mascot="legal" big={verifiedFacts.length} label={COPY.dashboard.statsVerified} color={C.purple} />
         </div>
       </Card>
 
@@ -1048,7 +1111,10 @@ function PropertyTab({ account, verifiedFacts }) {
       </Card>
       {verifiedFacts.length > 0 ? (
         <Card>
-          <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 16, marginBottom: 6 }}>Verified facts 📍</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <Mascot type="legal" size={28} motion={false} />
+            <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 16 }}>Verified facts</span>
+          </div>
           {verifiedFacts.map(([k, v, p]) => (
             <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 0", borderBottom: `1px solid ${C.line}` }}>
               <span style={{ color: C.sub, fontSize: 13.5, fontWeight: 700 }}>{k}</span>
@@ -1060,7 +1126,7 @@ function PropertyTab({ account, verifiedFacts }) {
         </Card>
       ) : (
         <Card style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 30 }}>📍</div>
+          <div style={{ display: "flex", justifyContent: "center" }}><Mascot type="scan" size={48} /></div>
           <div style={{ fontWeight: 800, marginTop: 6 }}>Your property facts live in your digests</div>
           <div style={{ color: C.sub, fontSize: 13.5, marginTop: 4, fontWeight: 600 }}>
             Open the Digest tab to see what KAIROS checked. Run a fresh scan anytime to refresh the detailed fact list.
@@ -1077,7 +1143,7 @@ function SavingsTab({ active }) {
     <div className="fu" style={{ display: "grid", gap: 14 }}>
       <Card accent={C.green} style={{ background: C.greenBg, border: "none" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 32 }}>💰</span>
+          <Mascot type="reports" size={44} />
           <div>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 20 }}>
               {COPY.value.savingsHeader(active.length)}
@@ -1090,7 +1156,7 @@ function SavingsTab({ active }) {
       </Card>
       {active.map((r) => (
         <Card key={r.key} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-          <span style={{ fontSize: 22 }}>💸</span>
+          <Mascot type={CAT_MASCOT(r)} size={34} motion={false} />
           <div>
             <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 15.5 }}>{r.name}</div>
             <div style={{ color: C.sub, fontSize: 13.5, lineHeight: 1.55, marginTop: 3, fontWeight: 600 }}>{r.so_what}</div>
@@ -1099,7 +1165,7 @@ function SavingsTab({ active }) {
       ))}
       {active.length === 0 && (
         <Card style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 30 }}>🌿</div>
+          <div style={{ display: "flex", justifyContent: "center" }}><Mascot type="monitoring" size={48} /></div>
           <div style={{ fontWeight: 800, marginTop: 6 }}>Nothing high-cost to watch right now</div>
           <div style={{ color: C.sub, fontSize: 13.5, marginTop: 4, fontWeight: 600 }}>That's the cheapest outcome of all.</div>
         </Card>
@@ -1114,10 +1180,13 @@ function SavingsTab({ active }) {
 function AlertsTab({ active, needed }) {
   return (
     <div className="fu" style={{ display: "grid", gap: 12 }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 18 }}>Things KAIROS is watching for you 🔔</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Mascot type="alerts" size={40} />
+        <span style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 18 }}>Things KAIROS is watching for you</span>
+      </div>
       {active.length === 0 && (
         <Card style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 30 }}>✅</div>
+          <div style={{ display: "flex", justifyContent: "center" }}><Mascot type="monitoring" size={48} /></div>
           <div style={{ fontWeight: 800, marginTop: 6 }}>Nothing active to watch — enjoy the quiet.</div>
         </Card>
       )}
@@ -1125,7 +1194,7 @@ function AlertsTab({ active, needed }) {
       {needed.length > 0 && (
         <Card style={{ background: C.yellowBg, border: "none" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 18 }}>🔑</span>
+            <Mascot type="legal" size={28} motion={false} />
             <span style={{ color: C.ink, fontSize: 14, fontWeight: 800 }}>Add to unlock sharper watching (never guessed):</span>
           </div>
           {needed.map((n) => <div key={n} style={{ color: C.yellowDk, fontSize: 13.5, padding: "3px 0", fontWeight: 700 }}>• {n}</div>)}
@@ -1207,7 +1276,7 @@ function buildDigest(attrs, results, n) {
 function DigestView({ d }) {
   if (!d) return (
     <Card className="fu" style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 34 }}>📬</div>
+      <div style={{ display: "flex", justifyContent: "center" }}><Mascot type="reports" size={56} /></div>
       <div style={{ fontWeight: 800, marginTop: 8 }}>Your first digest is on its way</div>
       <div style={{ color: C.sub, fontSize: 13.5, marginTop: 4, fontWeight: 600 }}>KAIROS will drop a friendly monthly note here — and the moment anything verified changes.</div>
     </Card>
@@ -1222,7 +1291,7 @@ function DigestView({ d }) {
       {d.escalation && (
         <Card style={{ background: C.coralBg, border: "none" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <span style={{ fontSize: 22 }}>🔔</span>
+            <Mascot type="alerts" size={32} motion={false} />
             <span style={{ color: C.ink, fontSize: 14, fontWeight: 700 }}>
               One condition changed this month and was sent to you the moment it happened — not held for the digest: <b>{d.escalation.name}</b>.
             </span>
