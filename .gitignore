@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+.env*
+
+# one-off mascot integration drop (real assets live in src/brand/mascots + public/brand)
+/integration_drop/
+/kairos_mascots_integration.diff
+/MASCOT_SYSTEM.md
+/mascots_preview.html
+/mascot_*.png
+/mascots.css
+/mascots.data.js
+/mascots.jsx

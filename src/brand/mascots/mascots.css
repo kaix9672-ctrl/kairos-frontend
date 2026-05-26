@@ -1,0 +1,56 @@
+/* =============================================================================
+   KAIROS mascot idle motion. Subtle only. The figure image stays upright; motion
+   comes from a decorative layer behind it (so faces never tilt) or a gentle whole-
+   figure float/sway. Pair with <Mascot type="..."/> which adds .kx-m + .kx-m--type.
+   ============================================================================= */
+.kx-m { position: relative; display: inline-block; line-height: 0; }
+.kx-m > img { position: relative; z-index: 1; display: block; }
+
+/* universal gentle idle float */
+@keyframes kx-float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
+.kx-m > img { animation: kx-float 5s ease-in-out infinite; }
+
+/* decorative motion layer (rings / pulses / orbits) sits behind the figure */
+.kx-m::after { content: ""; position: absolute; left: 50%; top: 50%; z-index: 0;
+  transform: translate(-50%,-50%); pointer-events: none; }
+
+/* Scan -> slow rotating scan ring */
+.kx-m--scan::after { width: 96%; height: 96%; border-radius: 50%;
+  border: 3px dashed var(--kx, #4c8df6); opacity: .35; animation: kx-spin 9s linear infinite; }
+@keyframes kx-spin { to { transform: translate(-50%,-50%) rotate(360deg) } }
+
+/* Monitoring -> radar pulse ring */
+.kx-m--monitoring::after { width: 70%; height: 70%; border-radius: 50%;
+  border: 2px solid var(--kx, #2fb457); animation: kx-radar 2.4s ease-out infinite; }
+@keyframes kx-radar { 0% { width: 30%; height: 30%; opacity: .6 } 100% { width: 104%; height: 104%; opacity: 0 } }
+
+/* Alerts -> gentle signal pulse (whole figure) */
+.kx-m--alerts > img { animation: kx-float 5s ease-in-out infinite, kx-pulse 1.8s ease-in-out infinite; }
+@keyframes kx-pulse { 0%,100% { filter: drop-shadow(0 0 0 rgba(224,73,47,0)) } 50% { filter: drop-shadow(0 0 7px rgba(224,73,47,.5)) } }
+
+/* Advisor -> slow orbit of two satellites */
+.kx-m--advisor::after { width: 116%; height: 64%; border-radius: 50%;
+  border: 2px solid var(--kx, #8fb6ff); opacity: .4; animation: kx-spin 13s linear infinite; }
+.kx-m--advisor::before { content: ""; position: absolute; left: 50%; top: 50%; z-index: 0;
+  width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--kx, #5b8def);
+  transform-origin: -54px 0; animation: kx-spin 13s linear infinite; }
+
+/* Flood -> soft wave sway */
+.kx-m--flood > img { animation: kx-float 5s ease-in-out infinite, kx-sway 3.4s ease-in-out infinite; }
+@keyframes kx-sway { 0%,100% { transform: translateX(-3px) } 50% { transform: translateX(3px) } }
+
+/* Reports -> subtle page shift */
+.kx-m--reports > img { animation: kx-shift 6s ease-in-out infinite; }
+@keyframes kx-shift { 0%,100% { transform: translateY(0) rotate(0) } 50% { transform: translateY(-3px) rotate(-1.2deg) } }
+
+/* Legal -> subtle seal glow */
+.kx-m--legal > img { animation: kx-float 5s ease-in-out infinite, kx-glow 3s ease-in-out infinite; }
+@keyframes kx-glow { 0%,100% { filter: drop-shadow(0 0 0 rgba(108,67,192,0)) } 50% { filter: drop-shadow(0 0 8px rgba(108,67,192,.45)) } }
+
+/* Ownership -> caution pulse */
+.kx-m--ownership > img { animation: kx-float 5s ease-in-out infinite, kx-cau 2.2s ease-in-out infinite; }
+@keyframes kx-cau { 0%,100% { filter: drop-shadow(0 0 0 rgba(217,115,11,0)) } 50% { filter: drop-shadow(0 0 6px rgba(217,115,11,.4)) } }
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-m > img, .kx-m::after, .kx-m::before { animation: none !important; }
+}
