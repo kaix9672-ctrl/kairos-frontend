@@ -5,7 +5,6 @@
 // Figures are the APPROVED master set (mascots_overview.png), served from
 // MASCOT_BASE_PATH; override per-app with <Mascot basePath="/your/path/">.
 // =============================================================================
-import React from "react";
 import { MASCOTS, MASCOT_BY_KEY, MASCOT_TYPES, MASCOT_BASE_PATH, MASCOT_CONTRACT } from "./mascots.data.js";
 
 export { MASCOTS, MASCOT_BY_KEY, MASCOT_TYPES, MASCOT_BASE_PATH, MASCOT_CONTRACT };

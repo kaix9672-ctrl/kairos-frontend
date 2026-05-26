@@ -1,8 +1,9 @@
 import { Mascot } from "./brand/mascots/mascots.jsx";
 import "./brand/mascots/mascots.css";
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import api from "./api";
 import { COPY } from "./copy";
+import KairosOpsDashboard from "./KairosOpsDashboard.jsx";
 
 // Support contact — env-driven (VITE_SUPPORT_EMAIL) so prod can override without a code
 // change; falls back to the project's real contact address (also used in ManualNeeded/copy).
@@ -41,7 +42,6 @@ const C = {
 };
 const FONT_DISPLAY = "'Baloo 2', 'Nunito', ui-rounded, system-ui, sans-serif";
 const FONT_BODY = "'Nunito', ui-rounded, system-ui, sans-serif";
-const SHADOW = "0 8px 24px rgba(28,68,128,.10)";
 const SHADOW_SM = "0 3px 10px rgba(28,68,128,.08)";
 
 // ----------------------------- provenance (UNCHANGED) -----------------------
@@ -52,7 +52,9 @@ const RANK = { "—": 0, "○": 1, "◐": 2, "●": 3 };
 const maxStr = (a, b) => (RANK[a] >= RANK[b] ? a : b);
 
 // ============================ ACTIVATION ENGINE (JS port — UNCHANGED) ========
+// eslint-disable-next-line no-unused-vars -- client-side engine port kept for reference; app uses the backend
 function evaluate(p) {
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- `use` here is the occupancy category fn, not the React hook
   const results = [flood(p), recert(p), insurance(p), entity(p), tax(p), ownership(p), use(p)];
   results.forEach(enforce);
   return results;
@@ -439,6 +441,7 @@ export default function App() {
         }
       `}</style>
       <Blobs />
+      <KairosOpsDashboard />{/* self-gates: visible only at #kairos-ops */}
       <div style={{ position: "relative", zIndex: 1 }}>
         <Header route={route} account={account} go={setRoute} />
         <div className="kai-app" style={{ maxWidth: 940, margin: "0 auto", padding: "0 20px 110px" }}>
@@ -467,7 +470,7 @@ export default function App() {
 function today() { return new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }); }
 
 // ----------------------------- header / footer ------------------------------
-function Header({ route, account, go }) {
+function Header({ account, go }) {
   return (
     <div style={{ position: "sticky", top: 0, zIndex: 20, backdropFilter: "blur(8px)",
       background: "rgba(255,255,255,.82)", borderBottom: `1px solid ${C.line}` }}>
@@ -548,7 +551,7 @@ function Landing({ onStart, onSample }) {
 }
 
 // ----------------------------- address entry / from-values ------------------
-function AddressEntry({ onRun, onRunLive, showValues, setShowValues, onLowFit }) {
+function AddressEntry({ onRun, showValues, setShowValues, onLowFit }) {
   const [addr, setAddr] = useState("");
   return (
     <div style={{ paddingTop: 48, maxWidth: 640 }}>
@@ -665,7 +668,7 @@ function Loading() {
   const steps = ["Finding your property in public records…", "Checking FEMA flood mapping…",
     "Reviewing assessment & ownership records…", "Spotting what's worth watching…"];
   const [i, setI] = useState(0);
-  useEffect(() => { const t = setInterval(() => setI((x) => Math.min(x + 1, steps.length - 1)), 560); return () => clearInterval(t); }, []);
+  useEffect(() => { const t = setInterval(() => setI((x) => Math.min(x + 1, steps.length - 1)), 560); return () => clearInterval(t); }, [steps.length]);
   return (
     <div style={{ paddingTop: 90, maxWidth: 520, margin: "0 auto", textAlign: "center" }}>
       <div className="floaty" style={{ marginBottom: 18, display: "flex", justifyContent: "center" }}>
@@ -803,7 +806,7 @@ const Line = ({ label, v, accent }) => (
 );
 
 // ----------------------------- subscribe ------------------------------------
-function Subscribe({ reco, onChoose, onSkip }) {
+function Subscribe({ onChoose, onSkip }) {
   const suggested = "starter";
   return (
     <div style={{ paddingTop: 48 }}>
@@ -1257,6 +1260,7 @@ function AccountTab({ account, setAccount }) {
 }
 
 // ----------------------------- digest view (cheerful) -----------------------
+// eslint-disable-next-line no-unused-vars -- client-side digest builder kept for reference; app uses backend digests
 function buildDigest(attrs, results, n) {
   const active = results.filter((r) => r.strength === STR.ACTIVE || r.strength === STR.PROVISIONAL);
   const monthDate = new Date(); monthDate.setMonth(monthDate.getMonth() + (n - 1));
