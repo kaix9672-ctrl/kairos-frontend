@@ -20,10 +20,20 @@ Mission: bring KAIROS to a customer-ready state across the two local repos
 - **Stripe TEST tooling**: CLI installed; `stripe` SDK in backend venv; observe-only
   harness `KAIROS_BACKEND_V1/verify_stripe_test.py`; TEST price IDs confirmed
   (starter / standard / professional, all `livemode=false`).
+- **Validation green (real repos, 2026-05-26)**:
+  - Backend test suites: **4 / 4 PASS** (core_logic, e2e, billing_lifecycle, unit_contracts).
+  - Frontend: **build PASS** (21 modules) and **lint PASS (0 errors / 0 warnings)** —
+    cleaned from 11 errors + 1 warning, no behavior change.
+- **Canonical backend data path declared**: SQLite via `app/db.py` (`KAIROS_DB`); no
+  Supabase code/schema exists anywhere — contradiction fully reconciled.
+- **Headless browser verification (Playwright/Chromium, real app @ :5173 → local backend)**:
+  all 5 UI stages PASS — homepage (6 mascots loaded+visible), sample scan → results,
+  subscribe, pay → mock-activate, onboard → dashboard ("On watch"); **0 console errors,
+  0 uncaught page errors**. Harness: `verify_ui.mjs`; screenshots in `/tmp/kairos_shots`.
 
 ## In progress
-- Branch `chore/reconcile-datalayer-and-ignore-drop`: data-layer comment fix +
-  ignore-drop + these tracking docs → build-verify → push → PR.
+- Nothing executing. Code-level customer-ready work is exhausted; remaining items are
+  founder/external-gated (below).
 
 ## Blocked (needs founder action)
 - **Billing / credit-card screen**: local backend is `mock_billing=true`; the real Stripe
